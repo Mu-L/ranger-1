@@ -17,18 +17,10 @@
  * under the License.
  */
 
-import { isEmpty } from "lodash";
+import { isEmpty, isObject, lastIndexOf } from "lodash";
 import moment from "moment-timezone";
 import React, { Component, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Col,
-  OverlayTrigger,
-  Popover,
-  Row
-} from "react-bootstrap";
+import { Alert, Badge, Button, OverlayTrigger, Popover } from "react-bootstrap";
 import { Field } from "react-final-form";
 import { useLocation } from "react-router-dom";
 import blockLoading from "Images/blockLoading.gif";
@@ -98,7 +90,7 @@ export class MoreLess extends Component {
           {this?.state?.data?.map((key) => {
             return (
               <Badge
-                variant="info"
+                bg="info"
                 title={key}
                 key={key}
                 className="m-1 text-truncate more-less-width"
@@ -153,16 +145,21 @@ export class AccessMoreLess extends Component {
 
   render() {
     return (
-      <div className="tags-set-height-groups">
+      <div
+        className={`tags-set-height-groups ${
+          !this?.state?.show && "tags-oflow"
+        }`}
+      >
         {this?.state?.data?.map((key, index) => {
           return (
-            <>
-              <h6>
-                <span className="item" key={index}>
-                  {key} {index < this?.state?.data.length - 1 && ", "}
-                </span>
-              </h6>
-            </>
+            <div
+              className="text-truncate cursor-pointer"
+              title={isObject(key) ? key?.props?.data : key}
+            >
+              <span className="tag-item" key={index}>
+                {key} {index < this?.state?.data.length - 1 && ", "}
+              </span>
+            </div>
           );
         })}
         <a
@@ -173,16 +170,12 @@ export class AccessMoreLess extends Component {
         >
           {this?.props?.Data?.length > 4 ? (
             this?.state?.show ? (
-              <span className="float-left-margin-1">
-                <h6>
-                  <code className="show-more-less"> + More..</code>
-                </h6>
+              <span className="float-start-margin-1">
+                <code className="show-more-less"> + More..</code>
               </span>
             ) : (
-              <span className="float-left-margin-1">
-                <h6>
-                  <code className="show-more-less"> - Less..</code>
-                </h6>
+              <span className="float-start-margin-1">
+                <code className="show-more-less"> - Less..</code>
               </span>
             )
           ) : null}
@@ -210,18 +203,18 @@ export const AuditFilterEntries = (props) => {
       : 0;
   };
   return (
-    <div className="row text-right mb-3">
+    <div className="row text-end mb-2">
       <div className="col-sm-12">
         Last Updated Time:&nbsp;
         <h6 className="d-inline">
-          <Badge className="mr-1" variant="info">
+          <Badge className="me-1" bg="info">
             {moment(moment()).format("MM/DD/YYYY hh:mm:ss A")}
           </Badge>
         </h6>
-        <span className="mr-1"> | </span>
+        <span className="me-1"> | </span>
         Entries:&nbsp;
         <h6 className="d-inline">
-          <Badge className="mr-1" variant="info">
+          <Badge className="me-1" bg="info">
             {showPageDetail(entries)}
           </Badge>
         </h6>
@@ -248,7 +241,7 @@ export const Condition = ({ when, is, children }) => (
         children
       ) : (
         <Alert variant="warning" className="text-center">
-          Select "Audit Filter" to save/add audit filter !!
+          Select &quot;Audit Filter&quot; to save/add audit filter !!
         </Alert>
       )
     }
@@ -270,13 +263,13 @@ export const CustomPopover = ({
         placement={placement}
         overlay={
           <Popover id={`popover-${placement}`}>
-            <Popover.Title as="h3">{title}</Popover.Title>
+            <Popover.Header as="h3">{title}</Popover.Header>
             {dangerousInnerHtml != undefined && dangerousInnerHtml ? (
-              <Popover.Content>
+              <Popover.Body>
                 <span dangerouslySetInnerHTML={{ __html: content }} />
-              </Popover.Content>
+              </Popover.Body>
             ) : (
-              <Popover.Content>{content}</Popover.Content>
+              <Popover.Body>{content}</Popover.Body>
             )}
           </Popover>
         }
@@ -296,7 +289,26 @@ export const CustomPopoverOnClick = ({
   id
 }) => {
   const [show, setShow] = useState(false);
-
+  let isListenerAttached = false;
+  useEffect(() => {
+    if (!isListenerAttached) {
+      document?.addEventListener("mousedown", handleClickOutside);
+      isListenerAttached = true;
+      return;
+    }
+    return () => {
+      document?.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+  const handleClickOutside = (e) => {
+    if (
+      document.getElementById(`popover-${placement}`)?.contains(e?.target) ==
+      false
+    ) {
+      setShow(false);
+    }
+    e?.stopPropagation();
+  };
   const handleClick = () => {
     setShow(!show);
   };
@@ -312,10 +324,10 @@ export const CustomPopoverOnClick = ({
             id={`popover-${placement}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <Popover.Title>
+            <Popover.Header>
               {title}
               <i
-                className="pull-right close"
+                className="float-end close ms-2"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleClick();
@@ -323,9 +335,9 @@ export const CustomPopoverOnClick = ({
               >
                 ×
               </i>
-            </Popover.Title>
+            </Popover.Header>
 
-            <Popover.Content>{content}</Popover.Content>
+            <Popover.Body>{content}</Popover.Body>
           </Popover>
         }
       >
@@ -353,7 +365,26 @@ export const CustomPopoverTagOnClick = ({
   icon
 }) => {
   const [show, setShow] = useState(false);
-
+  let isListenerAttached = false;
+  useEffect(() => {
+    if (!isListenerAttached) {
+      document?.addEventListener("mousedown", handleClickOutside);
+      isListenerAttached = true;
+      return;
+    }
+    return () => {
+      document?.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+  const handleClickOutside = (e) => {
+    if (
+      document.getElementById(`popover-${placement}`)?.contains(e?.target) ==
+      false
+    ) {
+      setShow(false);
+    }
+    e?.stopPropagation();
+  };
   const handleClick = () => {
     setShow(!show);
   };
@@ -369,10 +400,10 @@ export const CustomPopoverTagOnClick = ({
             id={`popover-${placement}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <Popover.Title as="h3">
+            <Popover.Header as="h3">
               {title}
               <i
-                className="pull-right"
+                className="float-end"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleClick();
@@ -380,8 +411,8 @@ export const CustomPopoverTagOnClick = ({
               >
                 ×
               </i>
-            </Popover.Title>
-            <Popover.Content>{content}</Popover.Content>
+            </Popover.Header>
+            <Popover.Body>{content}</Popover.Body>
           </Popover>
         }
       >
@@ -402,7 +433,11 @@ export const CustomPopoverTagOnClick = ({
 export const CustomTooltip = ({ placement, content, icon }) => (
   <OverlayTrigger
     placement={placement}
-    overlay={<Popover id={`tooltip-${placement}`}>{content}</Popover>}
+    overlay={
+      <Popover id={`tooltip-${placement}`}>
+        <span className=" d-block px-2 py-1">{content}</span>
+      </Popover>
+    }
   >
     <i className={icon} data-id="infoTextFiled" data-cy="infoTextFiled"></i>
   </OverlayTrigger>
@@ -466,10 +501,13 @@ export const selectCustomStyles = {
   }
 };
 
-export const scrollToNewData = (usrData, resultSize) => {
+export const scrollToNewData = (usrData) => {
   let newRowAdded;
-  newRowAdded = document.getElementById(usrData[resultSize - 1].id);
+  let lastIndex = lastIndexOf(usrData);
+  newRowAdded = document.getElementById(usrData?.[lastIndex - 1]?.id);
+
   if (newRowAdded) {
+    localStorage.removeItem("newDataAdded");
     newRowAdded.scrollIntoView({
       behavior: "smooth",
       block: "center",

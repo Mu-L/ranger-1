@@ -25,14 +25,6 @@ IF (OBJECT_ID('x_user_FK_added_by_id') IS NOT NULL)
 BEGIN
     ALTER TABLE [dbo].[x_user] DROP CONSTRAINT x_user_FK_added_by_id
 END
-IF (OBJECT_ID('x_trx_log_FK_upd_by_id') IS NOT NULL)
-BEGIN
-    ALTER TABLE [dbo].[x_trx_log] DROP CONSTRAINT x_trx_log_FK_upd_by_id
-END
-IF (OBJECT_ID('x_trx_log_FK_added_by_id') IS NOT NULL)
-BEGIN
-    ALTER TABLE [dbo].[x_trx_log] DROP CONSTRAINT x_trx_log_FK_added_by_id
-END
 IF (OBJECT_ID('x_resource_FK_upd_by_id') IS NOT NULL)
 BEGIN
     ALTER TABLE [dbo].[x_resource] DROP CONSTRAINT x_resource_FK_upd_by_id
@@ -545,6 +537,23 @@ IF (OBJECT_ID('x_sz_ref_user_FK_user_name') IS NOT NULL)
 BEGIN
     ALTER TABLE [dbo].[x_security_zone_ref_user] DROP CONSTRAINT x_sz_ref_user_FK_user_name
 END
+IF (OBJECT_ID('x_sz_ref_admin_role_FK_added_by_id') IS NOT NULL)
+BEGIN
+    ALTER TABLE [dbo].[x_security_zone_ref_role] DROP CONSTRAINT x_sz_ref_role_FK_added_by_id
+END
+IF (OBJECT_ID('x_sz_ref_role_FK_upd_by_id') IS NOT NULL)
+BEGIN
+    ALTER TABLE [dbo].[x_security_zone_ref_role] DROP CONSTRAINT x_sz_ref_role_FK_upd_by_id
+END
+IF (OBJECT_ID('x_sz_ref_role_FK_zone_id') IS NOT NULL)
+BEGIN
+    ALTER TABLE [dbo].[x_security_zone_ref_role] DROP CONSTRAINT x_sz_ref_role_FK_zone_id
+END
+IF (OBJECT_ID('x_sz_ref_role_FK_role_id') IS NOT NULL)
+BEGIN
+    ALTER TABLE [dbo].[x_security_zone_ref_role] DROP CONSTRAINT x_sz_ref_role_FK_role_id
+END
+
 IF (OBJECT_ID('x_sz_ref_resource_FK_added_by_id') IS NOT NULL)
 BEGIN
     ALTER TABLE [dbo].[x_security_zone_ref_resource] DROP CONSTRAINT x_sz_ref_resource_FK_added_by_id
@@ -616,10 +625,6 @@ END
 IF (OBJECT_ID('x_security_zone_FK_upd_by_id') IS NOT NULL)
 BEGIN
     ALTER TABLE [dbo].[x_security_zone] DROP CONSTRAINT x_security_zone_FK_upd_by_id
-END
-IF (OBJECT_ID('vx_trx_log') IS NOT NULL)
-BEGIN
-    DROP VIEW [dbo].[vx_trx_log]
 END
 IF (OBJECT_ID('x_rms_mapping_provider') IS NOT NULL)
 BEGIN
@@ -837,6 +842,10 @@ IF (OBJECT_ID('x_security_zone_ref_user') IS NOT NULL)
 BEGIN
     DROP TABLE [dbo].[x_security_zone_ref_user]
 END
+IF (OBJECT_ID('x_security_zone_ref_role') IS NOT NULL)
+BEGIN
+    DROP TABLE [dbo].[x_security_zone_ref_role]
+END
 IF (OBJECT_ID('x_security_zone_ref_tag_srvc') IS NOT NULL)
 BEGIN
     DROP TABLE [dbo].[x_security_zone_ref_tag_srvc]
@@ -869,9 +878,9 @@ IF (OBJECT_ID('x_perm_map') IS NOT NULL)
 BEGIN
     DROP TABLE [dbo].[x_perm_map]
 END
-IF (OBJECT_ID('x_trx_log') IS NOT NULL)
+IF (OBJECT_ID('x_trx_log_v2') IS NOT NULL)
 BEGIN
-    DROP TABLE [dbo].[x_trx_log]
+    DROP TABLE [dbo].[x_trx_log_v2]
 END
 IF (OBJECT_ID('x_resource') IS NOT NULL)
 BEGIN
@@ -1267,21 +1276,17 @@ CONSTRAINT [x_resource$x_resource_UK_policy_name] UNIQUE NONCLUSTERED
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
-CREATE TABLE [dbo].[x_trx_log](
+CREATE TABLE [dbo].[x_trx_log_v2](
         [id] [bigint] IDENTITY(1,1) NOT NULL,
         [create_time] [datetime2] DEFAULT NULL NULL,
-        [update_time] [datetime2] DEFAULT NULL NULL,
         [added_by_id] [bigint] DEFAULT NULL NULL,
-        [upd_by_id] [bigint] DEFAULT NULL NULL,
         [class_type] [int] DEFAULT 0 NOT NULL,
         [object_id] [bigint] DEFAULT NULL NULL,
         [parent_object_id] [bigint] DEFAULT NULL NULL,
         [parent_object_class_type] [int] DEFAULT 0 NOT NULL,
         [parent_object_name] [varchar](1024)DEFAULT NULL  NULL,
         [object_name] [varchar](1024) DEFAULT NULL NULL,
-        [attr_name] [varchar](255) DEFAULT NULL NULL,
-        [prev_val] [nvarchar](max) DEFAULT NULL NULL,
-        [new_val] [nvarchar](max)DEFAULT NULL  NULL,
+        [change_info] [nvarchar](max)DEFAULT NULL  NULL,
         [trx_id] [varchar](1024)DEFAULT NULL  NULL,
         [action] [varchar](255) DEFAULT NULL NULL,
         [sess_id] [varchar](512) DEFAULT NULL NULL,
@@ -1382,6 +1387,7 @@ CREATE TABLE [dbo].[x_service] (
         [tag_service] [bigint] DEFAULT NULL NULL,
         [tag_version] [bigint] DEFAULT 0 NOT NULL,
         [tag_update_time] [datetime2] DEFAULT NULL NULL,
+        [gds_service] [bigint] DEFAULT NULL NULL,
 PRIMARY KEY CLUSTERED
 (
         [id] ASC
@@ -2062,6 +2068,8 @@ CREATE TABLE [dbo].[x_service_version_info](
         [tag_update_time] [datetime2] DEFAULT NULL NULL,
         [role_version] [bigint] NOT NULL DEFAULT 0,
         [role_update_time] [datetime2] DEFAULT NULL NULL,
+        [gds_version] [bigint] NOT NULL DEFAULT 0,
+        [gds_update_time] [datetime2] DEFAULT NULL NULL,
         [version] [bigint] NOT NULL DEFAULT 1,
         PRIMARY KEY CLUSTERED
 (
@@ -2600,6 +2608,33 @@ GO
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
+CREATE TABLE [dbo].[x_security_zone_ref_role](
+        [id] [bigint] IDENTITY(1,1) NOT NULL,
+        [create_time] [datetime2] DEFAULT NULL NULL,
+        [update_time] [datetime2] DEFAULT NULL NULL,
+        [added_by_id] [bigint] DEFAULT NULL NULL,
+        [upd_by_id] [bigint] DEFAULT NULL NULL,
+        [zone_id] [bigint] DEFAULT NULL NULL,
+        [role_id] [bigint] DEFAULT NULL NULL,
+        [role_name] [nvarchar](767) DEFAULT NULL NULL
+        PRIMARY KEY CLUSTERED
+(
+        [id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY],
+) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[x_security_zone_ref_role] WITH CHECK ADD CONSTRAINT [x_sz_ref_role_FK_added_by_id] FOREIGN KEY([added_by_id]) REFERENCES [dbo].[x_portal_user] ([id])
+GO
+ALTER TABLE [dbo].[x_security_zone_ref_role] WITH CHECK ADD CONSTRAINT [x_sz_ref_role_FK_upd_by_id] FOREIGN KEY([upd_by_id]) REFERENCES [dbo].[x_portal_user] ([id])
+GO
+ALTER TABLE [dbo].[x_security_zone_ref_role] WITH CHECK ADD CONSTRAINT [x_sz_ref_role_FK_zone_id] FOREIGN KEY([zone_id]) REFERENCES [dbo].[x_security_zone] ([id])
+GO
+ALTER TABLE [dbo].[x_security_zone_ref_role] WITH CHECK ADD CONSTRAINT [x_sz_ref_role_FK_role_id] FOREIGN KEY([role_id]) REFERENCES [dbo].[x_role] ([id])
+GO
+
+SET ANSI_NULLS ON
+SET QUOTED_IDENTIFIER ON
+SET ANSI_PADDING ON
 
 CREATE TABLE [dbo].[x_tag_change_log] (
 [id] [bigint] IDENTITY(1,1) NOT NULL,
@@ -2755,12 +2790,6 @@ ALTER TABLE [dbo].[x_resource] CHECK CONSTRAINT [x_resource_FK_parent_id]
 ALTER TABLE [dbo].[x_resource]  WITH CHECK ADD  CONSTRAINT [x_resource_FK_upd_by_id] FOREIGN KEY([upd_by_id])
 REFERENCES [dbo].[x_portal_user] ([id])
 ALTER TABLE [dbo].[x_resource] CHECK CONSTRAINT [x_resource_FK_upd_by_id]
-ALTER TABLE [dbo].[x_trx_log]  WITH CHECK ADD  CONSTRAINT [x_trx_log_FK_added_by_id] FOREIGN KEY([added_by_id])
-REFERENCES [dbo].[x_portal_user] ([id])
-ALTER TABLE [dbo].[x_trx_log] CHECK CONSTRAINT [x_trx_log_FK_added_by_id]
-ALTER TABLE [dbo].[x_trx_log]  WITH CHECK ADD  CONSTRAINT [x_trx_log_FK_upd_by_id] FOREIGN KEY([upd_by_id])
-REFERENCES [dbo].[x_portal_user] ([id])
-ALTER TABLE [dbo].[x_trx_log] CHECK CONSTRAINT [x_trx_log_FK_upd_by_id]
 ALTER TABLE [dbo].[x_user]  WITH CHECK ADD  CONSTRAINT [x_user_FK_added_by_id] FOREIGN KEY([added_by_id])
 REFERENCES [dbo].[x_portal_user] ([id])
 ALTER TABLE [dbo].[x_user] CHECK CONSTRAINT [x_user_FK_added_by_id]
@@ -2794,6 +2823,8 @@ ALTER TABLE [dbo].[x_service]  WITH CHECK ADD  CONSTRAINT [x_service_FK_type] FO
 REFERENCES [dbo].[x_service_def] ([id])
 ALTER TABLE [dbo].[x_service] CHECK CONSTRAINT [x_service_FK_type]
 ALTER TABLE [dbo].[x_service]  WITH CHECK ADD  CONSTRAINT [x_service_FK_tag_service] FOREIGN KEY([tag_service])
+REFERENCES [dbo].[x_service] ([id])
+ALTER TABLE [dbo].[x_service]  WITH CHECK ADD  CONSTRAINT [x_service_FK_gds_service] FOREIGN KEY([gds_service])
 REFERENCES [dbo].[x_service] ([id])
 ALTER TABLE [dbo].[x_policy]  WITH CHECK ADD  CONSTRAINT [x_policy_FK_added_by_id] FOREIGN KEY([added_by_id])
 REFERENCES [dbo].[x_portal_user] ([id])
@@ -3414,26 +3445,24 @@ CREATE NONCLUSTERED INDEX [x_resource_up_time] ON [x_resource]
    [update_time] ASC
 )
 WITH (SORT_IN_TEMPDB = OFF,DROP_EXISTING = OFF,IGNORE_DUP_KEY = OFF,ONLINE = OFF) ON [PRIMARY]
-CREATE NONCLUSTERED INDEX [x_trx_log_cr_time] ON [x_trx_log]
+
+CREATE NONCLUSTERED INDEX [x_trx_log_v2_cr_time] ON [x_trx_log_v2]
 (
    [create_time] ASC
 )
 WITH (SORT_IN_TEMPDB = OFF,DROP_EXISTING = OFF,IGNORE_DUP_KEY = OFF,ONLINE = OFF) ON [PRIMARY]
-CREATE NONCLUSTERED INDEX [x_trx_log_FK_added_by_id] ON [x_trx_log]
+CREATE NONCLUSTERED INDEX [x_trx_log_v2_FK_added_by_id] ON [x_trx_log_v2]
 (
    [added_by_id] ASC
 )
 WITH (SORT_IN_TEMPDB = OFF,DROP_EXISTING = OFF,IGNORE_DUP_KEY = OFF,ONLINE = OFF) ON [PRIMARY]
-CREATE NONCLUSTERED INDEX [x_trx_log_FK_upd_by_id] ON [x_trx_log]
+CREATE NONCLUSTERED INDEX [x_trx_log_v2_FK_trx_id] ON [x_trx_log_v2]
 (
-   [upd_by_id] ASC
+   [trx_id] ASC
 )
 WITH (SORT_IN_TEMPDB = OFF,DROP_EXISTING = OFF,IGNORE_DUP_KEY = OFF,ONLINE = OFF) ON [PRIMARY]
-CREATE NONCLUSTERED INDEX [x_trx_log_up_time] ON [x_trx_log]
-(
-   [update_time] ASC
-)
-WITH (SORT_IN_TEMPDB = OFF,DROP_EXISTING = OFF,IGNORE_DUP_KEY = OFF,ONLINE = OFF) ON [PRIMARY]
+
+
 CREATE NONCLUSTERED INDEX [x_user_cr_time] ON [x_user]
 (
    [create_time] ASC
@@ -3923,6 +3952,10 @@ CREATE TABLE [dbo].[x_rms_service_resource](
 CONSTRAINT [x_rms_service_resource$x_service_res_UK_guid] UNIQUE NONCLUSTERED
 (
         [guid] ASC
+)WITH (PAD_INDEX = OFF,STATISTICS_NORECOMPUTE = OFF,IGNORE_DUP_KEY = OFF,ALLOW_ROW_LOCKS = ON,ALLOW_PAGE_LOCKS = ON) ON [PRIMARY],
+CONSTRAINT [x_rms_service_resource_UK_resource_signature] UNIQUE NONCLUSTERED
+(
+        [resource_signature] ASC
 )WITH (PAD_INDEX = OFF,STATISTICS_NORECOMPUTE = OFF,IGNORE_DUP_KEY = OFF,ALLOW_ROW_LOCKS = ON,ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
@@ -3934,13 +3967,6 @@ CREATE NONCLUSTERED INDEX [x_rms_service_resource_IDX_service_id] ON [x_rms_serv
 )
 WITH (SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF) ON [PRIMARY]
 GO
-CREATE NONCLUSTERED INDEX [x_rms_service_resource_IDX_resource_signature] ON [x_rms_service_resource]
-(
-   [resource_signature] ASC
-)
-WITH (SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF) ON [PRIMARY]
-GO
-
 
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
@@ -4115,6 +4141,11 @@ INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('058',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('059',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('060',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('065',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('066',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('073',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('074',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('075',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('DB_PATCHES',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_user_module_perm (user_id,module_id,create_time,update_time,added_by_id,upd_by_id,is_allowed) VALUES (dbo.getXportalUIdByLoginId('admin'),dbo.getModulesIdByName('Reports'),CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,dbo.getXportalUIdByLoginId('admin'),dbo.getXportalUIdByLoginId('admin'),1);
 INSERT INTO x_user_module_perm (user_id,module_id,create_time,update_time,added_by_id,upd_by_id,is_allowed) VALUES (dbo.getXportalUIdByLoginId('admin'),dbo.getModulesIdByName('Resource Based Policies'),CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,dbo.getXportalUIdByLoginId('admin'),dbo.getXportalUIdByLoginId('admin'),1);
@@ -4189,9 +4220,9 @@ INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10054',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10055',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10056',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10060',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10061',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10062',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10063',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('JAVA_PATCHES',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
-GO
-CREATE VIEW [dbo].[vx_trx_log] AS
-select x_trx_log.id AS id,x_trx_log.create_time AS create_time,x_trx_log.update_time AS update_time,x_trx_log.added_by_id AS added_by_id,x_trx_log.upd_by_id AS upd_by_id,x_trx_log.class_type AS class_type,x_trx_log.object_id AS object_id,x_trx_log.parent_object_id AS parent_object_id,x_trx_log.parent_object_class_type AS parent_object_class_type,x_trx_log.attr_name AS attr_name,x_trx_log.parent_object_name AS parent_object_name,x_trx_log.object_name AS object_name,x_trx_log.prev_val AS prev_val,x_trx_log.new_val AS new_val,x_trx_log.trx_id AS trx_id,x_trx_log.action AS action,x_trx_log.sess_id AS sess_id,x_trx_log.req_id AS req_id,x_trx_log.sess_type AS sess_type from x_trx_log
-where id in(select min(x_trx_log.id) from x_trx_log group by x_trx_log.trx_id)
 GO

@@ -28,21 +28,20 @@ import {
   ActivationStatus,
   RegexValidation,
   UserRoles,
-  UserSource
+  UserTypes
 } from "Utils/XAEnums";
 import { toast } from "react-toastify";
 import { getUserAccessRoleList, serverError } from "Utils/XAUtils";
-import { getUserProfile } from "Utils/appState";
-import _, { isEmpty, isUndefined } from "lodash";
+import { getUserProfile, setUserProfile } from "Utils/appState";
+import { cloneDeep, has, isEmpty, isUndefined } from "lodash";
 import { SyncSourceDetails } from "../SyncSourceDetails";
 import { BlockUi } from "../../../components/CommonComponents";
 import { InfoIcon } from "../../../utils/XAUtils";
 import { RegexMessage, roleChngWarning } from "../../../utils/XAMessages";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import usePrompt from "Hooks/usePrompt";
 
 const initialState = {
-  loader: true,
   blockUI: false
 };
 
@@ -54,11 +53,6 @@ const PromtDialog = (props) => {
 
 function reducer(state, action) {
   switch (action.type) {
-    case "SET_LOADER":
-      return {
-        ...state,
-        loader: action.loader
-      };
     case "SET_BLOCK_UI":
       return {
         ...state,
@@ -70,76 +64,75 @@ function reducer(state, action) {
 }
 
 function UserFormComp(props) {
-  const params = useParams();
   const { state } = useLocation();
   const navigate = useNavigate();
   const [userFormState, dispatch] = useReducer(reducer, initialState);
-  const { loader, blockUI } = userFormState;
+  const { blockUI } = userFormState;
   const { isEditView, userInfo } = props;
   const [preventUnBlock, setPreventUnblock] = useState(false);
   const toastId = React.useRef(null);
+  const isExternalOrFederatedUser =
+    userInfo?.userSource == UserTypes.USER_EXTERNAL.value ||
+    userInfo?.userSource == UserTypes.USER_FEDERATED.value;
 
-  const handleSubmit = async (formData, invalid) => {
-    let userFormData = { ...formData };
-    let tblpageData = {};
-    if (
-      state &&
-      state !== null &&
-      (!invalid?.getState()?.invalid || !invalid)
-    ) {
-      tblpageData = state.tblpageData;
-      if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
-        tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
-      } else {
-        if (state !== undefined) {
-          tblpageData["totalPage"] = state.tblpageData.totalPage;
-        }
-      }
-    }
-    let userRoleListVal = [];
-    if (userFormData.groupIdList) {
-      userFormData.groupIdList = userFormData.groupIdList.map(
+  const handleSubmit = async (formData) => {
+    let userFormData = {};
+
+    userFormData["name"] = formData.name;
+    userFormData["password"] = formData.password;
+    userFormData["firstName"] = formData.firstName;
+    userFormData["lastName"] = formData.lastName;
+    userFormData["emailAddress"] = formData.emailAddress;
+    userFormData["userRoleList"] = formData.userRoleList
+      ? [formData.userRoleList.value]
+      : [];
+
+    if (formData.groupIdList) {
+      userFormData["groupIdList"] = formData.groupIdList.map(
         (obj) => obj.value + ""
       );
     }
-    if (userFormData.userRoleList) {
-      userRoleListVal.push(userFormData.userRoleList.value);
-      userFormData.userRoleList = userRoleListVal;
-    }
-    delete userFormData.passwordConfirm;
-    userFormData.status = ActivationStatus.ACT_STATUS_ACTIVE.value;
-    if (isEditView) {
-      userFormData = {
-        ...userInfo,
-        ...userFormData
-      };
-      delete userFormData.password;
-    }
+
+    userFormData["status"] = ActivationStatus.ACT_STATUS_ACTIVE.value;
+
     setPreventUnblock(true);
     if (isEditView) {
+      let userEditData = { ...userInfo, ...userFormData };
+      delete userEditData.password;
+
       try {
         dispatch({
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const userEdit = await fetchApi({
+        await fetchApi({
           url: `xusers/secure/users/${userInfo.id}`,
           method: "put",
-          data: userFormData
+          data: userEditData
         });
-        toast.success("User updated successfully!!");
-        navigate("/users/usertab");
+
         dispatch({
           type: "SET_BLOCK_UI",
           blockUI: false
         });
+
+        const userProps = cloneDeep(getUserProfile());
+        if (userProps.loginId == userInfo.name) {
+          userProps.firstName = userEditData.firstName;
+          userProps.emailAddress = userEditData.emailAddress;
+          userProps.lastName = userEditData.lastName;
+
+          setUserProfile(userProps);
+        }
+        toast.success("User updated successfully!!");
+        navigate("/users/usertab");
       } catch (error) {
         dispatch({
           type: "SET_BLOCK_UI",
           blockUI: false
         });
         serverError(error);
-        console.error(`Error occurred while creating user`);
+        console.error("Error occurred while updating user");
       }
     } else {
       try {
@@ -147,10 +140,27 @@ function UserFormComp(props) {
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const userCreate = await fetchApi({
+        await fetchApi({
           url: "xusers/secure/users",
           method: "post",
           data: userFormData
+        });
+
+        let tblpageData = {};
+        if (state && state !== null) {
+          tblpageData = state.tblpageData;
+          if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
+            tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
+          } else {
+            if (state !== undefined) {
+              tblpageData["totalPage"] = state.tblpageData.totalPage;
+            }
+          }
+        }
+
+        dispatch({
+          type: "SET_BLOCK_UI",
+          blockUI: false
         });
         toast.success("User created successfully!!");
         navigate("/users/usertab", {
@@ -158,10 +168,6 @@ function UserFormComp(props) {
             showLastPage: true,
             addPageData: tblpageData
           }
-        });
-        dispatch({
-          type: "SET_BLOCK_UI",
-          blockUI: false
         });
       } catch (error) {
         dispatch({
@@ -181,8 +187,8 @@ function UserFormComp(props) {
     navigate("/users/usertab");
   };
 
-  const groupNameList = ({ input, ...rest }) => {
-    const loadOptions = async (inputValue, callback) => {
+  const groupNameList = ({ input }) => {
+    const loadOptions = async (inputValue) => {
       let params = {},
         op = [];
       if (inputValue) {
@@ -212,11 +218,7 @@ function UserFormComp(props) {
         defaultOptions
         isMulti
         isDisabled={
-          isEditView &&
-          userInfo &&
-          userInfo.userSource == UserSource.XA_USER.value
-            ? true
-            : false
+          isEditView && userInfo && isExternalOrFederatedUser ? true : false
         }
       />
     );
@@ -226,8 +228,11 @@ function UserFormComp(props) {
     const userProps = getUserProfile();
     let disabledUserRolefield;
     if (isEditView && userInfo) {
-      if (userInfo.userSource == UserSource.XA_USER.value) {
+      if (userInfo.userSource == UserTypes.USER_EXTERNAL.value) {
         disabledUserRolefield = true;
+      }
+      if (userInfo.userSource == UserTypes.USER_FEDERATED.value) {
+        return (disabledUserRolefield = true);
       }
       if (userProps.loginId != "admin") {
         if (userInfo.name != "admin") {
@@ -294,7 +299,7 @@ function UserFormComp(props) {
     if (
       isEditView &&
       userInfo &&
-      userInfo.userSource == UserSource.XA_USER.value &&
+      userInfo.userSource == UserTypes.USER_EXTERNAL.value &&
       e.label != input.value.label
     ) {
       toast.dismiss(toastId.current);
@@ -325,7 +330,8 @@ function UserFormComp(props) {
     if (isEditView) {
       if (
         !values.firstName &&
-        userInfo.userSource !== UserSource.XA_USER.value
+        userInfo.userSource !== UserTypes.USER_EXTERNAL.value &&
+        userInfo.userSource !== UserTypes.USER_FEDERATED.value
       ) {
         errors.firstName = "Required";
       }
@@ -357,7 +363,7 @@ function UserFormComp(props) {
 
     if (
       values &&
-      _.has(values, "password") &&
+      has(values, "password") &&
       !RegexValidation.PASSWORD.regexExpression.test(values.password)
     ) {
       errors.password = RegexValidation.PASSWORD.message;
@@ -365,8 +371,8 @@ function UserFormComp(props) {
 
     if (
       values &&
-      _.has(values, "password") &&
-      _.has(values, "passwordConfirm") &&
+      has(values, "password") &&
+      has(values, "passwordConfirm") &&
       values.password !== values.passwordConfirm
     ) {
       errors.passwordConfirm = "Password must be match with new password";
@@ -384,8 +390,6 @@ function UserFormComp(props) {
 
   return (
     <>
-      <h4 className="wrap-header bold">User Detail</h4>
-
       <Form
         onSubmit={handleSubmit}
         keepDirtyOnReinitialize={true}
@@ -398,7 +402,6 @@ function UserFormComp(props) {
           values,
           invalid,
           errors,
-          pristine,
           dirty
         }) => (
           <div className="wrap user-role-grp-form">
@@ -412,11 +415,11 @@ function UserFormComp(props) {
                 {({ input, meta }) => (
                   <Row className="form-group">
                     <Col xs={3}>
-                      <label className="form-label pull-right">
+                      <label className="form-label float-end">
                         User Name *
                       </label>
                     </Col>
-                    <Col xs={4}>
+                    <Col xs={4} className={"position-relative"}>
                       <input
                         {...input}
                         type="text"
@@ -432,7 +435,7 @@ function UserFormComp(props) {
                         data-cy="name"
                       />
                       <InfoIcon
-                        css="info-user-role-grp-icon"
+                        css="input-box-info-icon"
                         position="right"
                         message={RegexMessage.MESSAGE.userNameValidationMsg}
                       />
@@ -449,11 +452,11 @@ function UserFormComp(props) {
                   {({ input, meta }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           New Password *
                         </label>
                       </Col>
-                      <Col xs={4}>
+                      <Col xs={4} className={"position-relative"}>
                         <input
                           {...input}
                           type="password"
@@ -471,10 +474,13 @@ function UserFormComp(props) {
                           data-cy="password"
                         />
                         <InfoIcon
-                          css="info-user-role-grp-icon"
+                          css="input-box-info-icon"
                           position="right"
                           message={
-                            <p className="pd-10" style={{ fontSize: "small" }}>
+                            <p
+                              className="pd-10 mb-0"
+                              style={{ fontSize: "small" }}
+                            >
                               {
                                 RegexMessage.MESSAGE
                                   .passwordvalidationinfomessage
@@ -496,11 +502,11 @@ function UserFormComp(props) {
                   {({ input, meta }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           Password Confirm *
                         </label>
                       </Col>
-                      <Col xs={4}>
+                      <Col xs={4} className={"position-relative"}>
                         <input
                           {...input}
                           name="passwordConfirm"
@@ -520,10 +526,13 @@ function UserFormComp(props) {
                           data-cy="passwordConfirm"
                         />
                         <InfoIcon
-                          css="info-user-role-grp-icon"
+                          css="input-box-info-icon"
                           position="right"
                           message={
-                            <p className="pd-10" style={{ fontSize: "small" }}>
+                            <p
+                              className="pd-10 mb-0"
+                              style={{ fontSize: "small" }}
+                            >
                               {
                                 RegexMessage.MESSAGE
                                   .passwordvalidationinfomessage
@@ -543,11 +552,11 @@ function UserFormComp(props) {
                 {({ input, meta }) => (
                   <Row className="form-group">
                     <Col xs={3}>
-                      <label className="form-label pull-right">
+                      <label className="form-label float-end">
                         First Name *
                       </label>
                     </Col>
-                    <Col xs={4}>
+                    <Col xs={4} className={"position-relative"}>
                       <input
                         {...input}
                         name="firstName"
@@ -562,16 +571,14 @@ function UserFormComp(props) {
                             : "form-control"
                         }
                         disabled={
-                          isEditView &&
-                          userInfo &&
-                          userInfo.userSource == UserSource.XA_USER.value
+                          isEditView && userInfo && isExternalOrFederatedUser
                             ? true
                             : false
                         }
                         data-cy="firstName"
                       />
                       <InfoIcon
-                        css="info-user-role-grp-icon"
+                        css="input-box-info-icon"
                         position="right"
                         message={RegexMessage.MESSAGE.firstNameValidationMsg}
                       />
@@ -586,9 +593,9 @@ function UserFormComp(props) {
                 {({ input, meta }) => (
                   <Row className="form-group">
                     <Col xs={3}>
-                      <label className="form-label pull-right">Last Name</label>
+                      <label className="form-label float-end">Last Name</label>
                     </Col>
-                    <Col xs={4}>
+                    <Col xs={4} className={"position-relative"}>
                       <input
                         {...input}
                         name="lastName"
@@ -601,16 +608,14 @@ function UserFormComp(props) {
                             : "form-control"
                         }
                         disabled={
-                          isEditView &&
-                          userInfo &&
-                          userInfo.userSource == UserSource.XA_USER.value
+                          isEditView && userInfo && isExternalOrFederatedUser
                             ? true
                             : false
                         }
                         data-cy="lastName"
                       />
                       <InfoIcon
-                        css="info-user-role-grp-icon"
+                        css="input-box-info-icon"
                         position="right"
                         message={RegexMessage.MESSAGE.lastNameValidationMsg}
                       />
@@ -625,11 +630,11 @@ function UserFormComp(props) {
                 {({ input, meta }) => (
                   <Row className="form-group">
                     <Col xs={3}>
-                      <label className="form-label pull-right">
+                      <label className="form-label float-end">
                         Email Address
                       </label>
                     </Col>
-                    <Col xs={4}>
+                    <Col xs={4} className={"position-relative"}>
                       <input
                         {...input}
                         name="emailAddress"
@@ -646,16 +651,14 @@ function UserFormComp(props) {
                             : "form-control"
                         }
                         disabled={
-                          isEditView &&
-                          userInfo &&
-                          userInfo.userSource == UserSource.XA_USER.value
+                          isEditView && userInfo && isExternalOrFederatedUser
                             ? true
                             : false
                         }
                         data-cy="emailAddress"
                       />
                       <InfoIcon
-                        css="info-user-role-grp-icon"
+                        css="input-box-info-icon"
                         position="right"
                         message={
                           RegexMessage.MESSAGE.emailvalidationinfomessage
@@ -671,7 +674,7 @@ function UserFormComp(props) {
               </Field>
               <Row className="form-group">
                 <Col xs={3}>
-                  <label className="form-label pull-right">Select Role *</label>
+                  <label className="form-label float-end">Select Role *</label>
                 </Col>
                 <Col xs={4}>
                   <Field
@@ -693,7 +696,7 @@ function UserFormComp(props) {
 
               <Row className="form-group">
                 <Col xs={3}>
-                  <label className="form-label pull-right">Group</label>
+                  <label className="form-label float-end">Group</label>
                 </Col>
                 <Col xs={4}>
                   <Field
@@ -732,11 +735,13 @@ function UserFormComp(props) {
                           document.querySelector(
                             `input[id=${Object.keys(errors)[0]}]`
                           ) ||
-                          document.querySelector(`span[class="invalid-field"]`);
+                          document.querySelector(
+                            `span[className="invalid-field"]`
+                          );
 
                         scrollToError(selector);
                       }
-                      handleSubmit(values, invalid);
+                      handleSubmit(values);
                     }}
                     size="sm"
                     disabled={submitting}

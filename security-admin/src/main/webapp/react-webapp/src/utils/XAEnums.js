@@ -61,14 +61,17 @@ export const UserTypes = {
   USER_INTERNAL: {
     value: 0,
     label: "Internal",
-    rbkey: "xa.enum.AccessResult.ACCESS_RESULT_ALLOWED",
-    tt: "lbl.AccessResult_ACCESS_RESULT_ALLOWED"
+    variant: "success"
   },
   USER_EXTERNAL: {
     value: 1,
     label: "External",
-    rbkey: "xa.enum.AccessResult.ACCESS_RESULT_DENIED",
-    tt: "lbl.AccessResult_ACCESS_RESULT_DENIED"
+    variant: "warning"
+  },
+  USER_FEDERATED: {
+    value: 6,
+    label: "Federated",
+    variant: "secondary"
   }
 };
 
@@ -360,6 +363,54 @@ export const ClassTypes = {
     modelName: "VXRole",
     type: "vXRole",
     tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_ROLE"
+  },
+  CLASS_TYPE_RANGER_DATASET: {
+    value: 1062,
+    label: "Ranger Dataset",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_DATASET",
+    modelName: "RangerDataset",
+    type: "vDataset",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_DATASET"
+  },
+  CLASS_TYPE_RANGER_PROJECT: {
+    value: 1063,
+    label: "Ranger Project",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_PROJECT",
+    modelName: "RangerProject",
+    type: "vProject",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_PROJECT"
+  },
+  CLASS_TYPE_RANGER_DATA_SHARE: {
+    value: 1064,
+    label: "Ranger Data Share",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_DATA_SHARE",
+    modelName: "RangerDataShare",
+    type: "vDataShare",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_DATA_SHARE"
+  },
+  CLASS_TYPE_RANGER_SHARED_RESOURCE: {
+    value: 1065,
+    label: "Ranger Shared Resource",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_SHARED_RESOURCE",
+    modelName: "RangerSharedResource",
+    type: "vSharedResource",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_SHARED_RESOURCE"
+  },
+  CLASS_TYPE_RANGER_DATA_SHARE_IN_DATASET: {
+    value: 1066,
+    label: "Ranger DataShare in Dataset",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_DATA_SHARE_IN_DATASET",
+    modelName: "RangerDataShareInDataset",
+    type: "vDataShareInDataset",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_DATA_SHARE_IN_DATASET"
+  },
+  CLASS_TYPE_RANGER_DATASET_IN_PROJECT: {
+    value: 1067,
+    label: "Ranger Dataset in Project",
+    rbkey: "xa.enum.ClassTypes.CLASS_TYPE_RANGER_DATASET_IN_PROJECT",
+    modelName: "RangerDatasetInProject",
+    type: "vDatasetInProject",
+    tt: "lbl.ClassTypes_CLASS_TYPE_RANGER_DATASET_IN_PROJECT"
   }
 };
 
@@ -618,9 +669,30 @@ export const PathAssociateWithModule = {
     "/roles/create",
     "/roles/:roleId"
   ],
+  "Governed Data Sharing": [
+    "/gds/mydatasetlisting",
+    "/gds/datasetlisting",
+    "/gds/create",
+    "/gds/dataset/:datasetId/detail",
+    "/gds/dataset/:datasetId/fullview",
+    "/gds/dataset/:datasetId/accessGrant",
+    "/gds/mydatasharelisting",
+    "/gds/datasharelisting",
+    "/gds/datashare/create",
+    "/gds/request/list",
+    "/gds/request/detail/:requestId",
+    "/gds/datashare/:datashareId/detail",
+    "/gds/datashare/:datashareId/fullview",
+    "/gds/datashare/resource/:datashareId"
+  ],
   Permission: ["/permissions/models", "/permissions/:permissionId/edit"],
   Profile: ["/userprofile"],
-  KnoxSignOut: ["/knoxSSOWarning"]
+  KnoxSignOut: ["/knoxSSOWarning"],
+  DataNotFound: ["/dataNotFound"],
+  PageNotFound: ["/pageNotFound"],
+  localLogin: ["/locallogin"],
+  slashPath: ["/"],
+  Forbidden: ["/forbidden"]
 };
 
 /* Access */
@@ -739,4 +811,140 @@ export const ServiceType = {
     rbkey: "xa.enum.ServiceType.SERVICE_YARN",
     tt: "lbl.ServiceType_SERVICE_YARN"
   }
+};
+export const ServerAttrName = [
+  {
+    text: "Group Name",
+    info: "Name of Group."
+  },
+  {
+    text: "Policy Name",
+    info: "Enter name of policy."
+  },
+  {
+    text: "Status",
+    info: "Status of Policy Enable/Disable."
+  },
+  {
+    text: "User Name",
+    info: "Name of User."
+  },
+  {
+    text: "Role Name",
+    info: "Name of Role."
+  },
+  {
+    text: "Policy Label",
+    info: "Label of policy"
+  }
+];
+
+export const ResourcesOverrideInfoMsg = {
+  collection: "Solr collection.",
+  column: "Column Name",
+  "column-family": "Hbase column-family",
+  database: "Database",
+  entity: "Atlas all-entity.",
+  keyname: "Key Name",
+  path: "Name of policy resource path.",
+  queue: "Yarn queue.",
+  service: "Name of service.",
+  table: "Table Name",
+  tag: "Tag Name.",
+  topic: "Kafka topic.",
+  topology: "Topology Name",
+  type: "Policy for all type.",
+  udf: "Hive udf.",
+  url: "Hive url.",
+  "type-category": "Atlas type category.",
+  "entity-type": "Atlas entity type.",
+  "entity-classification": "Atlas entity classification.",
+  "atlas-service": "Atlas services.",
+  connector: "Connectivity By Sqoop.",
+  link: "Linker Name.",
+  job: "Sqoop Job Name.",
+  project: "Kylin Project Level.",
+  "nifi-resource": "NiFi Resource Identifier."
+};
+
+export const ServiceRequestDataRangerAcl = [
+  ServiceType.Service_HIVE.label,
+  ServiceType.Service_HBASE.label,
+  ServiceType.Service_HDFS.label,
+  ServiceType.Service_SOLR.label
+];
+
+export const ServiceRequestDataHadoopAcl = [ServiceType.Service_HDFS.label];
+
+export const UsersyncDetailsKeyDisplayMap = {
+  unixBackend: "Unix",
+  fileName: "File Name",
+  syncTime: "Sync time",
+  lastModified: "Last modified time",
+  minUserId: "Minimum user id",
+  minGroupId: "Minimum group id",
+  totalUsersSynced: "Total number of users synced",
+  totalGroupsSynced: "Total number of groups synced",
+  totalUsersDeleted: "Total number of users marked for delete",
+  totalGroupsDeleted: "Total number of groups marked for delete",
+  ldapUrl: "Ldap url",
+  isIncrementalSync: "Incremental sync",
+  userSearchEnabled: "User search enabled",
+  userSearchFilter: "User search filter",
+  groupSearchEnabled: "Group search enabled",
+  groupSearchFilter: "Group search filter",
+  groupSearchFirstEnabled: "Group search first enabled",
+  groupHierarchyLevel: "Group hierarchy level"
+};
+
+export const pluginStatusColumnInfoMsg = {
+  Policy: {
+    title: "Policy (Time details)",
+    lastUpdated: "Last update time of policies",
+    downloadTime: "Last policies download time (sync-up with Ranger).",
+    activeTime:
+      "Last time the downloaded policies became active for enforcement.",
+    downloadTimeDelayMsg:
+      "Latest update in policies are not yet downloaded (sync-up with Ranger).",
+    activationTimeDelayMsg:
+      "Latest update in policies are not yet active for enforcement."
+  },
+  Tag: {
+    title: "Tag Policy (Time details)",
+    lastUpdated: "Last update time of tags.",
+    downloadTime: "Last tags download time (sync-up with Ranger).",
+    activeTime: "Last time the downloaded tags became active for enforcement.",
+    downloadTimeDelayMsg:
+      "Latest update in tags are not yet downloaded (sync-up with Ranger).",
+    activationTimeDelayMsg:
+      "Latest update in tags are not yet active for enforcement."
+  },
+  GDS: {
+    title: "GDS (Time details)",
+    lastUpdated: "Last update time of GDS info.",
+    downloadTime: "Last GDS info download time (sync-up with Ranger).",
+    activeTime:
+      "Last time the downloaded GDS info became active for enforcement.",
+    downloadTimeDelayMsg:
+      "Latest update in GDS info is not yet downloaded (sync-up with Ranger).",
+    activationTimeDelayMsg:
+      "Latest update in GDS info is not yet active for enforcement."
+  },
+  Role: {
+    title: "Role (Time details)",
+    lastUpdated: "Last updated time of roles.",
+    downloadTime: "Last roles download time (sync-up with Ranger).",
+    activeTime: "Last time the downloaded roles became active for enforcement.",
+    downloadTimeDelayMsg:
+      "Latest update in roles are not yet downloaded (sync-up with Ranger).",
+    activationTimeDelayMsg:
+      "Latest update in roles are not yet active for enforcement."
+  }
+};
+
+export const statusClassMap = {
+  REQUESTED: "badge bg-warning",
+  GRANTED: "badge bg-success",
+  ACTIVE: "badge bg-primary",
+  DENIED: "badge bg-danger"
 };

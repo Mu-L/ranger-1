@@ -19,7 +19,13 @@
 
 import React, { useState } from "react";
 import { getUserProfile } from "Utils/appState";
-import { UserRoles, PathAssociateWithModule, QueryParams } from "Utils/XAEnums";
+import {
+  UserRoles,
+  PathAssociateWithModule,
+  QueryParams,
+  RangerPolicyType,
+  ServiceType
+} from "Utils/XAEnums";
 import {
   filter,
   find,
@@ -34,7 +40,9 @@ import {
   isUndefined,
   isNull,
   some,
-  has
+  has,
+  sortBy,
+  isArray
 } from "lodash";
 import { matchRoutes } from "react-router-dom";
 import dateFormat from "dateformat";
@@ -43,12 +51,13 @@ import CustomBreadcrumb from "../views/CustomBreadcrumb";
 import { CustomTooltip } from "../components/CommonComponents";
 import InfiniteScroll from "react-infinite-scroll-component";
 import { toast } from "react-toastify";
-import { RangerPolicyType } from "./XAEnums";
 import { policyInfoMessage } from "./XAMessages";
+import { fetchApi } from "Utils/fetchAPI";
+import folderIcon from "Images/folder-grey.png";
 
 export const LoginUser = (role) => {
   const userProfile = getUserProfile();
-  const currentUserRoles = userProfile.userRoleList[0];
+  const currentUserRoles = userProfile?.userRoleList[0];
   if (!currentUserRoles && currentUserRoles == "") {
     return false;
   }
@@ -132,8 +141,8 @@ export const isObject = (value) => {
 
 export const hasAccessToTab = (tabName) => {
   const userProfile = getUserProfile();
-  let userModules = map(userProfile.userPermList, "moduleName");
-  let groupModules = map(userProfile.groupPermissions, "moduleName");
+  let userModules = map(userProfile?.userPermList, "moduleName");
+  let groupModules = map(userProfile?.groupPermissions, "moduleName");
   let moduleNames = union(userModules, groupModules);
   let returnFlag = includes(moduleNames, tabName);
   return returnFlag;
@@ -145,11 +154,16 @@ export const hasAccessToPath = (pathName) => {
   if (pathName == "/") {
     pathName = "/policymanager/resource";
   }
-  let userModules = map(userProfile.userPermList, "moduleName");
-  let groupModules = map(userProfile.groupPermissions, "moduleName");
+  let userModules = map(userProfile?.userPermList, "moduleName");
+  let groupModules = map(userProfile?.groupPermissions, "moduleName");
   let moduleNames = union(userModules, groupModules);
   moduleNames.push("Profile");
   moduleNames.push("KnoxSignOut");
+  moduleNames.push("DataNotFound");
+  moduleNames.push("PageNotFound");
+  moduleNames.push("Forbidden");
+
+  moduleNames.push("localLogin");
   if (isSystemAdmin() || isAuditor()) {
     moduleNames.push("Permission");
   }
@@ -184,7 +198,9 @@ export const setTimeStamp = (dateTime) => {
     <span title={formatDateTime}>
       {formatDateTime}
       <div className="text-muted">
-        <small>{moment(formatDateTime).fromNow()}</small>
+        <small>
+          {moment(formatDateTime, "MM/DD/YYYY h:mm:ss A").fromNow()}
+        </small>
       </div>
     </span>
   ) : (
@@ -1019,7 +1035,7 @@ var links = {
 
 export const commonBreadcrumb = (type, options) => {
   let data = [];
-  type.map((obj) => {
+  type?.map((obj) => {
     if (typeof links[obj] == "function") {
       let filterdata = {};
       filterdata[obj] = links[obj](options);
@@ -1129,39 +1145,59 @@ export const fetchSearchFilterParams = (
   let defaultSearchFilterParam = [];
 
   // Get search filter params from current search params
-  const currentParams = Object.fromEntries([...searchParams]);
-  console.log("PRINT current search params : ", currentParams);
-
-  for (const param in currentParams) {
+  for (const [key, value] of searchParams.entries()) {
     let searchFilterObj = find(searchFilterOptions, {
-      urlLabel: param
+      urlLabel: key
     });
 
     if (!isUndefined(searchFilterObj)) {
       let category = searchFilterObj.category;
-      let value = currentParams[param];
+      let categoryValue = value;
 
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          label: value
-        });
-        value = !isUndefined(textOptionObj) ? textOptionObj.value : value;
+      if (searchFilterObj?.addMultiple) {
+        let oldValue = searchFilterParam[category];
+        let newValue = value;
+        if (oldValue) {
+          if (isArray(oldValue)) {
+            searchFilterParam[category].push(newValue);
+            searchParam[key].push(newValue);
+          } else {
+            searchFilterParam[category] = [oldValue, newValue];
+            searchParam[key] = [oldValue, newValue];
+          }
+        } else {
+          searchFilterParam[category] = newValue;
+          searchParam[key] = newValue;
+        }
+      } else {
+        if (searchFilterObj.type == "textoptions") {
+          let textOptionObj = find(searchFilterObj.options(), {
+            label: categoryValue
+          });
+          categoryValue = !isUndefined(textOptionObj)
+            ? textOptionObj.value
+            : categoryValue;
+        }
+
+        searchFilterParam[category] = categoryValue;
+        searchParam[key] = value;
       }
-
-      searchFilterParam[category] = value;
       defaultSearchFilterParam.push({
         category: category,
-        value: value
+        value: categoryValue
       });
+    } else {
+      searchParam[key] = value;
     }
   }
 
   // Get search filter params from localStorage
   if (isEmpty(searchFilterParam)) {
-    const localStorageParams = JSON.parse(localStorage.getItem(auditTabName));
-    console.log("PRINT available localStorage : ", localStorageParams);
+    if (!isNull(localStorage.getItem(auditTabName))) {
+      const localStorageParams =
+        !isEmpty(localStorage.getItem(auditTabName)) &&
+        JSON.parse(localStorage.getItem(auditTabName));
 
-    if (!isNull(localStorageParams) && !isEmpty(localStorageParams)) {
       for (const localParam in localStorageParams) {
         let searchFilterObj = find(searchFilterOptions, {
           urlLabel: localParam
@@ -1171,39 +1207,103 @@ export const fetchSearchFilterParams = (
           let category = searchFilterObj.category;
           let value = localStorageParams[localParam];
 
-          if (searchFilterObj.type == "textoptions") {
-            let textOptionObj = find(searchFilterObj.options(), {
-              label: value
-            });
-            value = !isUndefined(textOptionObj) ? textOptionObj.value : value;
-          }
+          if (searchFilterObj?.addMultiple) {
+            if (isArray(value)) {
+              for (const val of value) {
+                searchFilterParam[category] = value;
+                defaultSearchFilterParam.push({
+                  category: category,
+                  value: val
+                });
+                searchParam[localParam] = value;
+              }
+            } else {
+              searchFilterParam[category] = value;
+              defaultSearchFilterParam.push({
+                category: category,
+                value: value
+              });
+              searchParam[localParam] = value;
+            }
+          } else {
+            if (searchFilterObj.type == "textoptions") {
+              let textOptionObj = find(searchFilterObj.options(), {
+                label: value
+              });
+              value = !isUndefined(textOptionObj) ? textOptionObj.value : value;
+            }
 
-          searchFilterParam[category] = value;
-          defaultSearchFilterParam.push({
-            category: category,
-            value: value
-          });
-          searchParam[localParam] = value;
+            searchFilterParam[category] = value;
+            defaultSearchFilterParam.push({
+              category: category,
+              value: value
+            });
+            searchParam[localParam] = localStorageParams[localParam];
+          }
+        } else {
+          searchParam[localParam] = localStorageParams[localParam];
         }
       }
     }
   }
 
-  console.log("PRINT Final searchFilterParam to server : ", searchFilterParam);
-  console.log(
-    "PRINT Final defaultSearchFilterParam to tokenzier : ",
-    defaultSearchFilterParam
-  );
-  console.log(
-    "PRINT Final available localStorage is : ",
-    localStorage.getItem(auditTabName)
-  );
-
   finalSearchFilterData["searchFilterParam"] = searchFilterParam;
   finalSearchFilterData["defaultSearchFilterParam"] = defaultSearchFilterParam;
-  finalSearchFilterData["searchParam"] = { ...currentParams, ...searchParam };
+  finalSearchFilterData["searchParam"] = searchParam;
 
   return finalSearchFilterData;
+};
+
+export const parseSearchFilter = (filter, searchFilterOptions) => {
+  let finalSearchFilter = {};
+  let searchFilterParam = {};
+  let searchParam = {};
+
+  map(filter, function (obj) {
+    let searchFilterObj = find(searchFilterOptions, {
+      category: obj.category
+    });
+
+    if (searchFilterObj !== undefined) {
+      if (searchFilterObj?.addMultiple) {
+        let oldValue = searchFilterParam[obj.category];
+        let newValue = obj.value;
+        if (oldValue) {
+          if (isArray(oldValue)) {
+            searchFilterParam[obj.category].push(newValue);
+          } else {
+            searchFilterParam[obj.category] = [oldValue, newValue];
+          }
+        } else {
+          searchFilterParam[obj.category] = newValue;
+        }
+      } else {
+        searchFilterParam[obj.category] = obj.value;
+      }
+
+      let urlLabelParam = searchFilterObj.urlLabel;
+
+      if (searchFilterObj.type == "textoptions") {
+        let textOptionObj = find(searchFilterObj.options(), {
+          value: obj.value
+        });
+        searchParam[urlLabelParam] =
+          textOptionObj !== undefined ? textOptionObj.label : obj.value;
+      } else {
+        if (searchFilterObj?.addMultiple) {
+          searchParam[urlLabelParam] =
+            searchFilterParam[searchFilterObj.category];
+        } else {
+          searchParam[urlLabelParam] = obj.value;
+        }
+      }
+    }
+  });
+
+  finalSearchFilter["searchParam"] = searchParam;
+  finalSearchFilter["searchFilterParam"] = searchFilterParam;
+
+  return finalSearchFilter;
 };
 
 export const serverError = (error) => {
@@ -1214,7 +1314,7 @@ export const serverError = (error) => {
   }
 };
 
-/* policyInfo for masking and row filter */
+/* PolicyInfo for masking and row filter */
 
 export const policyInfo = (policyType, serviceType) => {
   if (
@@ -1273,4 +1373,215 @@ export const getBaseUrl = () => {
       0
     )
   );
+};
+
+/* Drag and Drop Feature */
+
+export const dragStart = (e, position, dragItem) => {
+  e.target.style.opacity = 0.4;
+  e.target.style.backgroundColor = "#fdf1a6";
+  e.stopPropagation();
+  dragItem.current = position;
+};
+
+export const dragEnter = (e, position, dragOverItem) => {
+  dragOverItem.current = position;
+};
+
+export const dragOver = (e) => {
+  e.preventDefault();
+};
+
+export const drop = (e, fields, dragItem, dragOverItem) => {
+  e.target.style.opacity = 1;
+  e.target.style.backgroundColor = "white";
+  if (dragItem.current == dragOverItem.current) {
+    return;
+  }
+
+  fields.move(dragItem.current, dragOverItem.current);
+
+  dragItem.current = null;
+  dragOverItem.current = null;
+};
+
+// TODO : Remove below code once different router path is used to distinguish between tag and resource service/policy
+export const updateTagActive = (isTagView) => {
+  if (isTagView) {
+    document
+      .getElementById("resourcesButton")
+      ?.classList?.remove("navbar-active");
+    document.getElementById("tagButton")?.classList?.add("navbar-active");
+  } else if (!isTagView) {
+    document.getElementById("tagButton")?.classList?.remove("navbar-active");
+    document.getElementById("resourcesButton")?.classList?.add("navbar-active");
+  }
+};
+
+export const handleLogout = async (checkKnoxSSOVal, navigate) => {
+  try {
+    await fetchApi({
+      url: "logout",
+      baseURL: "",
+      headers: {
+        "cache-control": "no-cache"
+      }
+    });
+    if (checkKnoxSSOVal !== undefined || checkKnoxSSOVal !== null) {
+      if (checkKnoxSSOVal?.toString() == "false") {
+        window.location.replace("/locallogin");
+        window.localStorage.clear();
+      } else {
+        navigate("/knoxSSOWarning");
+      }
+    } else {
+      window.location.replace("login.jsp");
+    }
+  } catch (error) {
+    toast.error(`Error occurred while logout! ${error}`);
+  }
+};
+
+export const checkKnoxSSO = async (navigate) => {
+  const userProfile = getUserProfile();
+  let checkKnoxSSOresp = {};
+  try {
+    checkKnoxSSOresp = await fetchApi({
+      url: "plugins/checksso",
+      type: "GET",
+      headers: {
+        "cache-control": "no-cache"
+      }
+    });
+    if (
+      checkKnoxSSOresp?.data?.toString() == "true" &&
+      userProfile?.configProperties?.inactivityTimeout > 0
+    ) {
+      window.location.replace("index.html?action=timeout");
+    } else {
+      handleLogout(checkKnoxSSOresp?.data, navigate);
+    }
+  } catch (error) {
+    if (checkKnoxSSOresp?.status == "419") {
+      window.location.replace("login.jsp");
+    }
+    console.error(`Error occurred while logout! ${error}`);
+  }
+};
+
+export const navigateTo = {
+  navigate: null
+};
+
+export const requestDataTitle = (serviceType) => {
+  let title = "";
+  if (serviceType == ServiceType.Service_HIVE.label) {
+    title = `Hive Query`;
+  }
+  if (serviceType == ServiceType.Service_HBASE.label) {
+    title = `HBase Audit Data`;
+  }
+  if (serviceType == ServiceType.Service_HDFS.label) {
+    title = `HDFS Operation Name`;
+  }
+  if (serviceType == ServiceType.Service_SOLR.label) {
+    title = "Solr Query";
+  }
+  return title;
+};
+
+//Policy condition evaluation
+
+export const policyConditionUpdatedJSON = (policyCond) => {
+  let newPolicyConditionJSON = [...policyCond];
+  newPolicyConditionJSON.filter(function (key) {
+    if (!key?.uiHint || key?.uiHint == "") {
+      if (
+        key.evaluatorOptions &&
+        key.evaluatorOptions?.["ui.isMultiline"] == "true"
+      ) {
+        key["uiHint"] = '{ "isMultiline":true }';
+      } else {
+        key["uiHint"] = '{ "isMultiValue":true }';
+      }
+    }
+  });
+  return newPolicyConditionJSON;
+};
+
+// Get resources with help of policy type
+
+export const getResourcesDefVal = (serviceDef, policyType) => {
+  let resources = [];
+  if (RangerPolicyType.RANGER_MASKING_POLICY_TYPE.value == policyType) {
+    resources = sortBy(serviceDef.dataMaskDef.resources, "itemId");
+  } else if (
+    RangerPolicyType.RANGER_ROW_FILTER_POLICY_TYPE.value == policyType
+  ) {
+    resources = sortBy(serviceDef.rowFilterDef.resources, "itemId");
+  } else {
+    resources = sortBy(serviceDef.resources, "itemId");
+  }
+  return resources;
+};
+
+// Get defult landing page
+
+export const getLandingPageURl = () => {
+  if (hasAccessToTab("Resource Based Policies")) {
+    return "/policymanager/resource";
+  } else {
+    if (hasAccessToTab("Tag Based Policies")) {
+      return "/policymanager/tag";
+    } else {
+      return "/userprofile";
+    }
+  }
+};
+
+export const getServiceDefIcon = (serviceDefName) => {
+  let imagePath = folderIcon;
+  let imageStyling;
+
+  try {
+    const serviceDefIcon = require(
+      `../images/serviceDefIcons/${serviceDefName}/icon.svg`
+    ).default;
+    imagePath = serviceDefIcon;
+    imageStyling = { height: "27px", width: "27px" };
+  } catch (error) {
+    console.log(
+      `Continuing to use default icon for ${serviceDefName.toUpperCase()}`
+    );
+  }
+
+  return (
+    <span className={imageStyling !== undefined ? "serviceDef-icon m-r-5" : ""}>
+      <img
+        src={imagePath}
+        style={imageStyling !== undefined ? imageStyling : {}}
+        className={imageStyling !== undefined ? "" : "m-r-5"}
+        alt={`${serviceDefName.toUpperCase()} Icon`}
+        title={`${serviceDefName.toUpperCase()}`}
+      />
+    </span>
+  );
+};
+
+export const capitalizeFirstLetter = (str) => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
+export const currentTimeZone = (timeZoneDate) => {
+  return timeZoneDate
+    ? `${dateFormat(timeZoneDate, "mm/dd/yyyy hh:MM:ss TT ")} ${new Date(
+        timeZoneDate
+      )
+        .toString()
+        .replace(/^.*GMT.*\(/, "")
+        .replace(/\)$/, "")}`
+    : new Date()
+        .toString()
+        .replace(/^.*GMT.*\(/, "")
+        .replace(/\)$/, "");
 };

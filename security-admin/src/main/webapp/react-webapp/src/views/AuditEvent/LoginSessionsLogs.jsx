@@ -21,22 +21,25 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Badge, Row, Col } from "react-bootstrap";
 import XATableLayout from "Components/XATableLayout";
+import { fetchApi } from "Utils/fetchAPI";
 import { AuthStatus, AuthType } from "../../utils/XAEnums";
 import AdminModal from "./AdminModal";
 import dateFormat from "dateformat";
 import { AuditFilterEntries } from "Components/CommonComponents";
 import moment from "moment-timezone";
-import { find, map, sortBy } from "lodash";
+import { sortBy } from "lodash";
 import StructuredFilter from "../../components/structured-filter/react-typeahead/tokenizer";
 import {
   getTableSortBy,
   getTableSortType,
   fetchSearchFilterParams,
-  serverError
+  parseSearchFilter,
+  serverError,
+  currentTimeZone
 } from "../../utils/XAUtils";
 import { Loader } from "../../components/CommonComponents";
 
-function Login_Sessions() {
+function LoginSessions() {
   const [loginSessionListingData, setLoginSessionLogs] = useState([]);
   const [loader, setLoader] = useState(true);
   const [sessionId, setSessionId] = useState([]);
@@ -68,7 +71,7 @@ function Login_Sessions() {
       );
 
     // Updating the states for search params, search filter, default search filter and localStorage
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     if (
       JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
     ) {
@@ -95,10 +98,10 @@ function Login_Sessions() {
           params["sortType"] = getTableSortType(sortBy);
         }
         try {
-          const { fetchApi, fetchCSRFConf } = await import("Utils/fetchAPI");
           logsResp = await fetchApi({
             url: "xusers/authSessions",
-            params: params
+            params: params,
+            skipNavigate: true
           });
           logs = logsResp.data.vXAuthSessions;
           totalCount = logsResp.data.totalCount;
@@ -175,7 +178,9 @@ function Login_Sessions() {
         Cell: (rawValue) => {
           if (rawValue.value) {
             return (
-              <span className="text-center d-block">{rawValue.value}</span>
+              <span className="text-center d-block text-truncate">
+                {rawValue.value}
+              </span>
             );
           } else {
             return <span className="text-center d-block">--</span>;
@@ -196,19 +201,19 @@ function Login_Sessions() {
               if (AuthStatus[item].value == 1) {
                 html = (
                   <span className="text-center d-block">
-                    <Badge variant="success">{label}</Badge>
+                    <Badge bg="success">{label}</Badge>
                   </span>
                 );
               } else if (AuthStatus[item].value == 2) {
                 html = (
                   <span className="text-center d-block">
-                    <Badge variant="danger">{label}</Badge>
+                    <Badge bg="danger">{label}</Badge>
                   </span>
                 );
               } else {
                 html = (
                   <span className="text-center d-block">
-                    <Badge variant="secondary">{label}</Badge>
+                    <Badge bg="secondary">{label}</Badge>
                   </span>
                 );
               }
@@ -269,7 +274,7 @@ function Login_Sessions() {
         disableSortBy: true
       },
       {
-        Header: "Login Time ( India Standard Time )",
+        Header: `Login Time ( ${currentTimeZone()} )`,
         accessor: "authTime",
         Cell: (rawValue) => {
           let formatDateTime = dateFormat(
@@ -286,34 +291,18 @@ function Login_Sessions() {
   );
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
-
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(searchFilterOptions, {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      searchFilterOptions
+    );
 
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     localStorage.setItem("loginSession", JSON.stringify(searchParam));
-    resetPage.page(0);
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   const searchFilterOptions = [
@@ -397,8 +386,7 @@ function Login_Sessions() {
                 key="login-session-search-filter"
                 placeholder="Search for your login sessions..."
                 options={sortBy(searchFilterOptions, ["label"])}
-                onTokenAdd={updateSearchFilter}
-                onTokenRemove={updateSearchFilter}
+                onChange={updateSearchFilter}
                 defaultSelected={defaultSearchFilterParams}
               />
             </div>
@@ -426,4 +414,4 @@ function Login_Sessions() {
   );
 }
 
-export default Login_Sessions;
+export default LoginSessions;

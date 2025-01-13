@@ -26,11 +26,12 @@ import { SyncSourceDetails } from "../UserGroupRoleListing/SyncSourceDetails";
 import dateFormat from "dateformat";
 import moment from "moment-timezone";
 import StructuredFilter from "../../components/structured-filter/react-typeahead/tokenizer";
-import { find, map, sortBy, has } from "lodash";
+import { sortBy, has } from "lodash";
 import {
   getTableSortBy,
   getTableSortType,
   fetchSearchFilterParams,
+  parseSearchFilter,
   serverError
 } from "../../utils/XAUtils";
 
@@ -58,7 +59,10 @@ function User_Sync() {
     let { searchFilterParam, defaultSearchFilterParam, searchParam } =
       fetchSearchFilterParams("userSync", searchParams, searchFilterOptions);
 
-    if (!has(searchFilterParam, "startDate")) {
+    if (
+      !has(searchFilterParam, "startDate") &&
+      !has(searchFilterParam, "endDate")
+    ) {
       searchParam["startDate"] = currentDate;
       searchFilterParam["startDate"] = currentDate;
       defaultSearchFilterParam.push({
@@ -68,7 +72,7 @@ function User_Sync() {
     }
 
     // Updating the states for search params, search filter, default search filter and localStorage
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     setSearchFilterParams(searchFilterParam);
     setDefaultSearchFilterParams(defaultSearchFilterParam);
     localStorage.setItem("userSync", JSON.stringify(searchParam));
@@ -80,7 +84,7 @@ function User_Sync() {
       fetchSearchFilterParams("userSync", searchParams, searchFilterOptions);
 
     // Updating the states for search params, search filter, default search filter and localStorage
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     if (
       JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
     ) {
@@ -107,7 +111,7 @@ function User_Sync() {
           params["sortType"] = getTableSortType(sortBy);
         }
         try {
-          const { fetchApi, fetchCSRFConf } = await import("Utils/fetchAPI");
+          const { fetchApi } = await import("Utils/fetchAPI");
           logsResp = await fetchApi({
             url: "assets/ugsyncAudits",
             params: params
@@ -187,7 +191,7 @@ function User_Sync() {
         Cell: (rawValue) => {
           return (
             <span className="text-center d-block">
-              <Badge variant="success">{rawValue.value}</Badge>
+              <Badge bg="success">{rawValue.value}</Badge>
             </span>
           );
         },
@@ -295,34 +299,18 @@ function User_Sync() {
   );
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
-
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(searchFilterOptions, {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      searchFilterOptions
+    );
 
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     localStorage.setItem("userSync", JSON.stringify(searchParam));
-    resetPage.page(0);
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   const searchFilterOptions = [
@@ -371,8 +359,7 @@ function User_Sync() {
                 key="usersync-audit-search-filter"
                 placeholder="Search for your user sync audits..."
                 options={sortBy(searchFilterOptions, ["label"])}
-                onTokenAdd={updateSearchFilter}
-                onTokenRemove={updateSearchFilter}
+                onChange={updateSearchFilter}
                 defaultSelected={defaultSearchFilterParams}
               />
             </div>

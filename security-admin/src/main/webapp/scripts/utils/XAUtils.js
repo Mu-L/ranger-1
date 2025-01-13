@@ -24,7 +24,7 @@ define(function(require) {
 	var localization = require('utils/XALangSupport');
 	var XAUtils = {};
 	var notify = require('bootstrap-notify');
-	var bootbox = require('bootbox');
+	var bootprompt = require('bootprompt');
     var moment = require('moment');
 
 	// ///////////////////////////////////////////////////////
@@ -213,7 +213,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-exclamation-circle',
 			title: '<strong>Info!</strong>',
-			message: text
+			message: _.escape(text)
 		});
 	};
 
@@ -231,7 +231,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-exclamation-triangle',
 			title: '<strong>Error!</strong>',
-			message: text
+			message: _.escape(text)
 		},{
 			type: 'danger',
 		});
@@ -251,7 +251,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-check-circle',
 			title: '<strong>Success!</strong>',
-			message: text
+			message: _.escape(text)
 		},{
 			type: 'success'
 		});
@@ -348,7 +348,7 @@ define(function(require) {
 
 			e.preventDefault();
 			e.stopImmediatePropagation();
-			bootbox.dialog(
+			bootprompt.dialog(
 			{
 				message: msg,
 				buttons: {
@@ -387,35 +387,35 @@ define(function(require) {
 	};
 	
 	/**
-	 * Bootbox wrapper for alert
+	 * Bootprompt wrapper for alert
 	 * 
 	 * @param {Object}
 	 *            params - The params
 	 */
 	XAUtils.alertPopup = function(params) {
-		bootbox.hideAll();
+		bootprompt.hideAll();
 		if (params.callback == undefined) {
-			bootbox.alert(params.msg);
+			bootprompt.alert(params.msg);
 		} else {
-			bootbox.alert(params.msg, params.callback);
+			bootprompt.alert(params.msg, params.callback);
 		}
 	};
      
 	//Alert box with time set 
 	XAUtils.alertBoxWithTimeSet = function(msg) {
-		var alert = bootbox.alert(msg);
+		var alert = bootprompt.alert(msg);
     	return(setTimeout(function(){alert.modal('hide'); }, 4000));
 	}
 	
 	/**
-	 * Bootbox wrapper for confirm
+	 * Bootprompt wrapper for confirm
 	 * 
 	 * @param {Object}
 	 *            params - The params
 	 */
 	XAUtils.confirmPopup = function(params) {
-		bootbox.hideAll();
-		bootbox.confirm(params.msg, function(result) {
+		bootprompt.hideAll();
+		bootprompt.confirm(params.msg, function(result) {
 			if (result) {
 				params.callback();
 			}
@@ -497,7 +497,7 @@ define(function(require) {
 		} else
 			return '--';
 	};
-        XAUtils.showGroupsOrUsersForPolicy = function(rawValue, model, showType, rangerServiceDefModel) {
+        XAUtils.showGroupsOrUsersForPolicy = function(model, showType, rangerServiceDefModel) {
 		var showMoreLess = false, groupArr = [], items = [];
 		var itemList = ['policyItems','allowExceptions','denyPolicyItems','denyExceptions','dataMaskPolicyItems','rowFilterPolicyItems']
 		if(!_.isUndefined(rangerServiceDefModel)){
@@ -627,6 +627,12 @@ define(function(require) {
 				}, 4000);
 			} else {
 				window.location = 'login.jsp?sessionTimeout=true';
+			}
+		}else if(error.status == 400 && error.responseJSON && error.responseJSON.messageList && error.responseJSON.messageList[0].name) {
+			if(error.responseJSON.messageList[0].name == "DATA_NOT_FOUND" || error.responseJSON.messageList[0].name == "INVALID_INPUT_DATA"){
+				App.rContent.show(new vError({
+					status : error.status
+				}));
 			}
 		}
 	};
@@ -1667,6 +1673,7 @@ define(function(require) {
         return {
             closeOnSelect : true,
             placeholder   : placeholder,
+            separator : "@-undefined-@",
             tags : true,
             width : width,
             initSelection: function(element, callback) {
@@ -1719,8 +1726,14 @@ define(function(require) {
                         //remove selected values
                         if(that.collection && that.collection.models){
                             _.filter(that.collection.models, function(model){
-                                if(model && !_.isUndefined(model.get('name'))){
-                                    selectedVals.push(model.get('name'));
+                                if(auditFilter !== "auditFilter"){
+                                    if(model && !_.isUndefined(model.get('name'))){
+                                        selectedVals.push(model.get('name'));
+                                    }
+                                } else {
+                                    if(model && !_.isUndefined(model.get($select))){
+                                        selectedVals = model.get($select);
+                                    }
                                 }
                             })
                         }
@@ -1962,7 +1975,7 @@ define(function(require) {
             if (timeLeft == 0 ) {
                 clearTimeout(timerId);
                 if (!moment().isAfter(moment(idleTimeVal))) {
-                    bootbox.hideAll()
+                    bootprompt.hideAll()
                 } else {
                     localStorage.setItem('idleTimerLoggedOut', 'false');
                     XAUtils.idleActivityLogout();
@@ -1974,7 +1987,7 @@ define(function(require) {
                     localStorage.setItem('idleTimerLoggedOut', 'false');
                     XAUtils.idleActivityLogout();
                 } else if (!moment().isAfter(moment(idleTimeVal))) {
-                    bootbox.hideAll()
+                    bootprompt.hideAll()
                     clearTimeout(timerId);
                 } else {
                     $.find('#Timer')[0].innerHTML ='Time left : '+ timeLeft + ' seconds remaining';
@@ -1982,7 +1995,7 @@ define(function(require) {
                 }
             }
         }
-        bootbox.dialog({
+        bootprompt.dialog({
             title: 'Session Expiration Warning',
             message: '<span class="inline-block">' + localization.tt('dialogMsg.idleTimeOutMsg') +'<br>'+ $elem + '</span>',
             closeButton: false,
