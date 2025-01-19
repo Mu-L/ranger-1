@@ -17,18 +17,17 @@
  * under the License.
  */
 
-import React, { useState, useEffect, useReducer } from "react";
+import React, { useEffect, useReducer } from "react";
 import { Tab, Button, Nav, Row, Col } from "react-bootstrap";
 import { Form, Field } from "react-final-form";
-import { getUserProfile, setUserProfile } from "Utils/appState";
 import UserFormComp from "Views/UserGroupRoleListing/users_details/UserFormComp";
 import { Loader, scrollToError } from "Components/CommonComponents";
 import { fetchApi } from "Utils/fetchAPI";
 import { UserTypes, RegexValidation } from "Utils/XAEnums";
-import { commonBreadcrumb } from "../../../utils/XAUtils";
 import { toast } from "react-toastify";
-import withRouter from "Hooks/withRouter";
-import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import { has } from "lodash";
+import { commonBreadcrumb, InfoIcon } from "../../../utils/XAUtils";
 
 const initialState = {
   userInfo: {},
@@ -52,13 +51,11 @@ const userFormReducer = (state, action) => {
   }
 };
 
-function AddUserView(props) {
+function AddUserView() {
   const params = useParams();
   const [userDetails, dispatch] = useReducer(userFormReducer, initialState);
   const { userInfo, loader } = userDetails;
-  const { state } = useLocation();
   const navigate = useNavigate();
-  const userProps = getUserProfile();
 
   useEffect(() => {
     if (params?.userID) {
@@ -79,25 +76,15 @@ function AddUserView(props) {
       });
     } catch (error) {
       console.error(
-        `Error occurred while fetching Zones or CSRF headers! ${error}`
+        `Error occurred while fetching Users or CSRF headers! ${error}`
       );
     }
     dispatch({
       type: "SET_USER_DATA",
-      userInfo: userRespData.data,
+      userInfo: userRespData?.data,
       loader: false
     });
   };
-
-  const Error = ({ name }) => (
-    <Field name={name}>
-      {({ meta: { error, touched } }) => {
-        return error && touched ? (
-          <div className="col-sm-2">{error}</div>
-        ) : null;
-      }}
-    </Field>
-  );
 
   const validateForm = (values) => {
     const errors = {};
@@ -110,7 +97,10 @@ function AddUserView(props) {
     }
     if (!values.reEnterPassword) {
       errors.reEnterPassword = "Required";
-    } else if (values.newPassword !== values.reEnterPassword) {
+    } else if (
+      has(values, "newPassword") &&
+      values.newPassword !== values.reEnterPassword
+    ) {
       errors.reEnterPassword = "Password must be match with new password";
     }
     return errors;
@@ -124,7 +114,7 @@ function AddUserView(props) {
       ...userDetails
     };
     try {
-      const passwdResp = await fetchApi({
+      await fetchApi({
         url: `xusers/secure/users/${params.userID}`,
         method: "PUT",
         data: userDetails
@@ -132,7 +122,8 @@ function AddUserView(props) {
       toast.success("User password change successfully!!");
       navigate("/users/usertab");
     } catch (error) {
-      console.error(`Error occurred while updating user password! ${error}`);
+      toast.error("Error occured while updating user details!");
+      console.error(`Error occurred while updating user details! ${error}`);
     }
   };
 
@@ -142,9 +133,13 @@ function AddUserView(props) {
 
   return loader ? (
     <Loader />
-  ) : userInfo.userSource == UserTypes.USER_EXTERNAL.value ? (
+  ) : userInfo.userSource == UserTypes.USER_EXTERNAL.value ||
+    userInfo.userSource == UserTypes.USER_FEDERATED.value ? (
     <>
-      {commonBreadcrumb(["Users", "UserEdit"], params.userID)}
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">User Detail</h3>
+        {commonBreadcrumb(["Users", "UserEdit"], params.userID)}
+      </div>
       <UserFormComp
         isEditView={true}
         userID={params.userID}
@@ -153,7 +148,10 @@ function AddUserView(props) {
     </>
   ) : (
     <>
-      {commonBreadcrumb(["Users", "UserEdit"], params.userID)}
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">User Detail</h3>
+        {commonBreadcrumb(["Users", "UserEdit"], params.userID)}
+      </div>
       <div className="wrap">
         <Tab.Container transition={false} defaultActiveKey="edit-basic-info">
           <Nav variant="tabs">
@@ -181,7 +179,6 @@ function AddUserView(props) {
             <Tab.Content>
               <Tab.Pane eventKey="edit-password">
                 <>
-                  <h4 className="wrap-header bold">User Password Change</h4>
                   <Form
                     onSubmit={handleSubmit}
                     validate={validateForm}
@@ -189,10 +186,8 @@ function AddUserView(props) {
                       handleSubmit,
                       form,
                       submitting,
-                      values,
                       invalid,
-                      errors,
-                      pristine
+                      errors
                     }) => (
                       <div className="wrap">
                         <form
@@ -212,11 +207,11 @@ function AddUserView(props) {
                             {({ input, meta }) => (
                               <Row className="form-group">
                                 <Col xs={3}>
-                                  <label className="form-label pull-right">
+                                  <label className="form-label float-end">
                                     New Password *
                                   </label>
                                 </Col>
-                                <Col xs={4}>
+                                <Col xs={4} className={"position-relative"}>
                                   <input
                                     {...input}
                                     type="password"
@@ -235,6 +230,18 @@ function AddUserView(props) {
                                     }
                                     data-cy="newPassword"
                                   />
+                                  <InfoIcon
+                                    css="input-box-info-icon"
+                                    position="right"
+                                    message={
+                                      <p
+                                        className="pd-10 mb-0"
+                                        style={{ fontSize: "small" }}
+                                      >
+                                        {RegexValidation.PASSWORD.message}
+                                      </p>
+                                    }
+                                  />
                                   {meta.error && meta.touched && (
                                     <span className="invalid-field">
                                       {meta.error}
@@ -248,11 +255,11 @@ function AddUserView(props) {
                             {({ input, meta }) => (
                               <Row className="form-group">
                                 <Col xs={3}>
-                                  <label className="form-label pull-right">
+                                  <label className="form-label float-end">
                                     Password Confirm *
                                   </label>
                                 </Col>
-                                <Col xs={4}>
+                                <Col xs={4} className={"position-relative"}>
                                   <input
                                     {...input}
                                     name="reEnterPassword"
@@ -270,6 +277,18 @@ function AddUserView(props) {
                                         : "form-control"
                                     }
                                     data-cy="reEnterPassword"
+                                  />
+                                  <InfoIcon
+                                    css="input-box-info-icon"
+                                    position="right"
+                                    message={
+                                      <p
+                                        className="pd-10 mb-0"
+                                        style={{ fontSize: "small" }}
+                                      >
+                                        {RegexValidation.PASSWORD.message}
+                                      </p>
+                                    }
                                   />
                                   {meta.error && meta.touched && (
                                     <span className="invalid-field">

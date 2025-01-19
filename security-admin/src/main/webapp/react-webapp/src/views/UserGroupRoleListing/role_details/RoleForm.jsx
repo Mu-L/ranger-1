@@ -107,7 +107,7 @@ function RoleForm() {
     preventUnBlock,
     blockUI
   } = roleFormState;
-
+  const toastId = React.useRef(null);
   useEffect(() => {
     if (params?.roleID) {
       fetchRoleData(params.roleID);
@@ -153,7 +153,7 @@ function RoleForm() {
   const fetchRoleData = async (roleID) => {
     let roleRespData;
     try {
-      const { fetchApi, fetchCSRFConf } = await import("Utils/fetchAPI");
+      const { fetchApi } = await import("Utils/fetchAPI");
       roleRespData = await fetchApi({
         url: "roles/roles/" + roleID
       });
@@ -164,36 +164,28 @@ function RoleForm() {
     }
     dispatch({
       type: "SET_ROLE_DATA",
-      roleInfo: roleRespData.data,
+      roleInfo: roleRespData?.data,
       loader: false
     });
   };
 
-  const handleSubmit = async (formData, invalid) => {
+  const handleSubmit = async (formData) => {
     let roleFormData = {
       ...roleInfo,
       ...formData
     };
-    let tblpageData = {};
-    if (state && state != null && (!invalid?.getState()?.invalid || !invalid)) {
-      tblpageData = state.tblpageData;
-      if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
-        tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
-      } else {
-        if (tblpageData !== undefined) {
-          tblpageData["totalPage"] = state.tblpageData.totalPage;
-        }
-      }
-    }
+
     if (
       !isEmpty(selectedUser) ||
       !isEmpty(selectedGroup) ||
       !isEmpty(selectedRole)
     ) {
-      return toast.warning(
+      toast.dismiss(toastId.current);
+      return (toastId.current = toast.warning(
         `Please add selected user/group/roles to there respective table else user/group/roles will not be added.`
-      );
+      ));
     }
+
     dispatch({
       type: "SET_PREVENT_ALERT",
       preventUnBlock: true
@@ -205,7 +197,7 @@ function RoleForm() {
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const userEdit = await fetchApi({
+        await fetchApi({
           url: `roles/roles/${params.roleID}`,
           method: "put",
           data: roleFormData
@@ -230,11 +222,22 @@ function RoleForm() {
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const passwdResp = await fetchApi({
+        await fetchApi({
           url: "roles/roles",
           method: "post",
           data: formData
         });
+        let tblpageData = {};
+        if (state && state != null) {
+          tblpageData = state.tblpageData;
+          if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
+            tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
+          } else {
+            if (tblpageData !== undefined) {
+              tblpageData["totalPage"] = state.tblpageData.totalPage;
+            }
+          }
+        }
         dispatch({
           type: "SET_BLOCK_UI",
           blockUI: false
@@ -254,6 +257,9 @@ function RoleForm() {
         serverError(error);
         console.error(`Error occurred while updating Role! ${error}`);
       }
+    }
+    if (toastId.current !== null) {
+      toast.dismiss(toastId.current);
     }
   };
 
@@ -280,7 +286,8 @@ function RoleForm() {
 
   const handleUserAdd = (push) => {
     if (selectedUser.length == 0) {
-      toast.warning("Please select atleast one user!!");
+      toast.dismiss(toastId.current);
+      toastId.current = toast.warning("Please select atleast one user!!");
     } else {
       let usr = selectedUser.map(({ value }) => ({
         name: value,
@@ -299,7 +306,8 @@ function RoleForm() {
 
   const handleGroupAdd = (push) => {
     if (selectedGroup.length == 0) {
-      toast.warning("Please select atleast one group!!");
+      toast.dismiss(toastId.current);
+      toastId.current = toast.warning("Please select atleast one group!!");
     } else {
       let grp = selectedGroup.map(({ value }) => ({
         name: value,
@@ -338,7 +346,8 @@ function RoleForm() {
 
   const handleRoleAdd = (push) => {
     if (selectedRole.length == 0) {
-      toast.warning("Please select atleast one role!!");
+      toast.dismiss(toastId.current);
+      toastId.current = toast.warning("Please select atleast one role!!");
     } else {
       let rol = selectedRole.map(({ value }) => ({
         name: value,
@@ -417,11 +426,14 @@ function RoleForm() {
 
   return (
     <>
-      {commonBreadcrumb(
-        ["Roles", params.roleID ? "RoleEdit" : "RoleCreate"],
-        params.roleID
-      )}
-      <h4 className="wrap-header bold">Role Detail</h4>
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">Role Detail</h3>
+        {commonBreadcrumb(
+          ["Roles", params.roleID ? "RoleEdit" : "RoleCreate"],
+          params.roleID
+        )}
+      </div>
+
       {loader ? (
         <Loader />
       ) : (
@@ -435,15 +447,13 @@ function RoleForm() {
           render={({
             handleSubmit,
             form: {
-              mutators: { push, pop }
+              mutators: { push }
             },
             form,
             submitting,
             invalid,
             errors,
             values,
-            fields,
-            pristine,
             dirty
           }) => (
             <div className="wrap user-role-grp-form">
@@ -458,11 +468,11 @@ function RoleForm() {
                   {({ input, meta }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           Role Name *
                         </label>
                       </Col>
-                      <Col xs={4}>
+                      <Col xs={4} className={"position-relative"}>
                         <input
                           {...input}
                           type="text"
@@ -477,7 +487,7 @@ function RoleForm() {
                           disabled={params.roleID ? true : false}
                           data-cy="name"
                         />
-                        <span className="info-user-role-grp-icon">
+                        <span className="input-box-info-icon">
                           <CustomTooltip
                             placement="right"
                             content={
@@ -507,7 +517,7 @@ function RoleForm() {
                   {({ input }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           Description
                         </label>
                       </Col>
@@ -530,8 +540,8 @@ function RoleForm() {
                     <Col sm="8">
                       <FieldArray name="users">
                         {({ fields }) => (
-                          <Table className="table table-striped table-bordered">
-                            <thead>
+                          <Table className="table table-bordered fixed-headertable">
+                            <thead className="thead-light">
                               <tr>
                                 <th className="text-center">User Name</th>
                                 <th className="text-center">Is Role Admin</th>
@@ -560,7 +570,7 @@ function RoleForm() {
                                       <Field
                                         className="form-control"
                                         name={`${name}.isAdmin`}
-                                        render={({ input, meta }) => (
+                                        render={({ input }) => (
                                           <div>
                                             <BForm.Group>
                                               <BForm.Check
@@ -635,9 +645,9 @@ function RoleForm() {
                         {({ fields }) => (
                           <Table
                             bordered
-                            className="table table-striped table-bordered"
+                            className="table table-bordered fixed-headertable"
                           >
-                            <thead>
+                            <thead className="thead-light">
                               <tr>
                                 <th className="text-center">Group Name</th>
                                 <th className="text-center">Is Role Admin</th>
@@ -656,7 +666,7 @@ function RoleForm() {
                                 </tr>
                               ) : (
                                 fields.map((name, index) => (
-                                  <tr>
+                                  <tr key={index}>
                                     <td className="text-center more-less-width text-truncate">
                                       <span title={fields.value[index].name}>
                                         {fields.value[index].name}
@@ -666,7 +676,7 @@ function RoleForm() {
                                       <Field
                                         className="form-control"
                                         name={`${name}.isAdmin`}
-                                        render={({ input, meta }) => (
+                                        render={({ input }) => (
                                           <div>
                                             <BForm.Group>
                                               <BForm.Check
@@ -724,7 +734,7 @@ function RoleForm() {
                             data-name="groupsAddBtn"
                             data-cy="groupsAddBtn"
                           >
-                            Add Group
+                            Add Groups
                           </Button>
                         </div>
                       </div>
@@ -741,9 +751,9 @@ function RoleForm() {
                         {({ fields }) => (
                           <Table
                             bordered
-                            className="table table-striped table-bordered"
+                            className="table table-bordered fixed-headertable"
                           >
-                            <thead>
+                            <thead className="thead-light">
                               <tr>
                                 <th className="text-center">Role Name</th>
                                 <th className="text-center">Is Role Admin</th>
@@ -762,7 +772,7 @@ function RoleForm() {
                                 </tr>
                               ) : (
                                 fields.map((name, index) => (
-                                  <tr>
+                                  <tr key={index}>
                                     <td className="text-center more-less-width text-truncate">
                                       <span title={fields.value[index].name}>
                                         {fields.value[index].name}
@@ -772,7 +782,7 @@ function RoleForm() {
                                       <Field
                                         className="form-control"
                                         name={`${name}.isAdmin`}
-                                        render={({ input, meta }) => (
+                                        render={({ input }) => (
                                           <div>
                                             <BForm.Group>
                                               <BForm.Check
@@ -831,7 +841,7 @@ function RoleForm() {
                             data-cy="rolesAddBtn"
                             s
                           >
-                            Add Role
+                            Add Roles
                           </Button>
                         </div>
                       </div>
@@ -855,11 +865,11 @@ function RoleForm() {
                               `input[id=${Object.keys(errors)[0]}]`
                             ) ||
                             document.querySelector(
-                              `span[class="invalid-field"]`
+                              `span[className="invalid-field"]`
                             );
                           scrollToError(selector);
                         }
-                        handleSubmit(values, invalid);
+                        handleSubmit(values);
                       }}
                       size="sm"
                       disabled={submitting}

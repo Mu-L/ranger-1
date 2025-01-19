@@ -19,20 +19,113 @@
 
 import React, { Component } from "react";
 import ServiceDefinitions from "./ServiceManager/ServiceDefinitions";
+import { Tab, Tabs } from "react-bootstrap";
+import withRouter from "Hooks/withRouter";
+import { hasAccessToTab } from "../utils/XAUtils";
+import CustomBreadcrumb from "./CustomBreadcrumb";
 
 class Home extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      isTagView: this.props.isTagView
+      isTagView: this.props.isTagView,
+      activeKey: this.activeTab(),
+      loader: false
     };
   }
 
+  tabChange = (tabName) => {
+    this.props.navigate(`/policymanager/${tabName}`);
+  };
+
+  componentDidUpdate(nextProps, prevState) {
+    let activeTabVal = this.activeTab();
+
+    if (prevState.activeKey !== activeTabVal) {
+      this.setState({ activeKey: this.activeTab() });
+    }
+  }
+
+  activeTab = () => {
+    let activeTabVal;
+    if (this.props.location.pathname) {
+      if (this.props.location.pathname == "/policymanager/resource") {
+        activeTabVal = "resource";
+      } else if (this.props.location.pathname == "/policymanager/tag") {
+        activeTabVal = "tag";
+      }
+    }
+    return activeTabVal;
+  };
+
+  disableTabs = (loader) => {
+    const elements = [
+      { id: "resourceSelectedZone", className: "disabledEvents" },
+      { id: "tagSelectedZone", className: "disabledEvents" },
+      { selector: "sidebar-header", className: "disabledEvents" },
+      { id: "rangerIcon", className: "disabledCursor" }
+    ];
+    elements.forEach((element) => {
+      const target = element.id
+        ? document.getElementById(element.id)
+        : document.getElementsByClassName(element.selector)?.[0];
+
+      if (target) {
+        if (loader) {
+          target.classList.add(element.className);
+        } else {
+          target.classList.remove(element.className);
+        }
+      }
+    });
+    this.setState({ loader: loader });
+  };
+
   render() {
     return (
-      <ServiceDefinitions isTagView={this.state.isTagView}></ServiceDefinitions>
+      <>
+        <div className="header-wraper">
+          <h3 className="wrap-header bold">Service Manager</h3>
+          <CustomBreadcrumb />
+        </div>
+        <Tabs
+          id="ServiceManager"
+          activeKey={this.state.activeKey}
+          onSelect={(tabKey) => this.tabChange(tabKey)}
+          className={`${this.state.loader ? "not-allowed" : ""}`}
+        >
+          {hasAccessToTab("Resource Based Policies") && (
+            <Tab
+              eventKey="resource"
+              title="Resource"
+              disabled={this.state.loader ? true : false}
+            >
+              {!this.state.isTagView && (
+                <ServiceDefinitions
+                  isTagView={this.state.isTagView}
+                  disableTabs={this.disableTabs}
+                ></ServiceDefinitions>
+              )}
+            </Tab>
+          )}
+          {hasAccessToTab("Tag Based Policies") && (
+            <Tab
+              eventKey="tag"
+              title="Tag"
+              disabled={this.state.loader ? true : false}
+            >
+              {this.state.isTagView && (
+                <ServiceDefinitions
+                  isTagView={this.state.isTagView}
+                  disableTabs={this.disableTabs}
+                ></ServiceDefinitions>
+              )}
+            </Tab>
+          )}
+        </Tabs>
+      </>
     );
   }
 }
 
-export default Home;
+export default withRouter(Home);

@@ -26,15 +26,20 @@ import {
   Table,
   Spinner
 } from "react-bootstrap";
-import React, { useEffect, useReducer } from "react";
+import React, { useEffect, useReducer, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Loader } from "Components/CommonComponents";
 import { fetchApi } from "Utils/fetchAPI";
 import AsyncSelect from "react-select/async";
 import { toast } from "react-toastify";
-import { cloneDeep, find, findIndex, reverse } from "lodash";
+import { cloneDeep, find, findIndex, isEmpty, map, reverse } from "lodash";
 import { AccessResult } from "Utils/XAEnums";
-import { commonBreadcrumb, CustomInfinteScroll } from "../../utils/XAUtils";
+import {
+  CustomInfinteScroll,
+  commonBreadcrumb,
+  serverError
+} from "../../utils/XAUtils";
+import { BlockUi } from "../../components/CommonComponents";
 
 const initialState = {
   loader: true,
@@ -42,7 +47,8 @@ const initialState = {
   selectedGrp: [],
   selectedUsr: [],
   usrloading: false,
-  grploading: false
+  grploading: false,
+  blockUI: false
 };
 
 function reducer(state, action) {
@@ -73,13 +79,19 @@ function reducer(state, action) {
     case "GRP_LOADING": {
       return { ...state, grploading: true };
     }
+    case "SET_BLOCK_UI":
+      return {
+        ...state,
+        blockUI: action.blockUI
+      };
     default:
       throw new Error();
   }
 }
-const EditPermission = (props) => {
+const EditPermission = () => {
   let { permissionId } = useParams();
   const navigate = useNavigate();
+  const toastId = useRef(null);
   const [permissionState, dispatch] = useReducer(reducer, initialState);
   const {
     loader,
@@ -87,7 +99,8 @@ const EditPermission = (props) => {
     usrloading,
     grploading,
     selectedGrp,
-    selectedUsr
+    selectedUsr,
+    blockUI
   } = permissionState;
 
   useEffect(() => {
@@ -100,7 +113,8 @@ const EditPermission = (props) => {
       (values.selectGroups && values.selectGroups.length > 0) ||
       (values.selectuser && values.selectuser.length > 0)
     ) {
-      toast.error(
+      toast.dismiss(toastId.current);
+      toastId.current = toast.error(
         "Please add selected user/group to permissions else user/group will not be added."
       );
       return false;
@@ -139,28 +153,31 @@ const EditPermission = (props) => {
     }
 
     try {
+      dispatch({
+        type: "SET_BLOCK_UI",
+        blockUI: true
+      });
       await fetchApi({
         url: `xusers/permission/${permissionId}`,
         method: "PUT",
         data: formData
       });
-
+      dispatch({
+        type: "SET_BLOCK_UI",
+        blockUI: false
+      });
       navigate("/permissions/models");
-      toast.success("Success! Module Permissions updated successfully");
+      toast.dismiss(toastId.current);
+      toastId.current = toast.success(
+        "Success! Module Permissions updated successfully"
+      );
     } catch (error) {
+      dispatch({
+        type: "SET_BLOCK_UI",
+        blockUI: false
+      });
       console.error(`Error occurred while fetching Policies ! ${error}`);
-      if (error) {
-        if (
-          error &&
-          error.response &&
-          error.response.data &&
-          error.response.data.msgDesc
-        ) {
-          toast.error(error.response.data.msgDesc);
-        } else {
-          toast.error(`Error occurred while fetching Policies ! ${error}`);
-        }
-      }
+      serverError(error);
     }
   };
 
@@ -173,20 +190,20 @@ const EditPermission = (props) => {
         url: `xusers/permission/${permissionId}`,
         params: {}
       });
-      data = permissionResp.data;
+      data = permissionResp?.data;
     } catch (error) {
       console.error(`Error occurred while fetching Permissions ! ${error}`);
     }
-    groups = reverse(data.groupPermList);
-    users = reverse(data.userPermList);
+    groups = reverse(data?.groupPermList);
+    users = reverse(data?.userPermList);
     dispatch({
       type: "SET_DATA",
       data,
-      grpData: groups.map((obj) => ({
+      grpData: groups?.map((obj) => ({
         label: obj.groupName,
         value: obj.groupId
       })),
-      usrData: users.map((obj) => ({
+      usrData: users?.map((obj) => ({
         label: obj.userName,
         value: obj.userId
       }))
@@ -194,18 +211,27 @@ const EditPermission = (props) => {
   };
 
   const fetchGroups = async (inputValue) => {
-    let params = {};
+    let params = { isVisible: 1 };
+    let groupsOp = [];
+
     if (inputValue) {
       params["name"] = inputValue || "";
     }
-    const groupResp = await fetchApi({
-      url: "xusers/groups",
-      params: params
+
+    try {
+      const groupResp = await fetchApi({
+        url: "xusers/groups",
+        params: params
+      });
+      groupsOp = groupResp.data?.vXGroups;
+    } catch (error) {
+      console.error(`Error occurred while fetching Groups ! ${error}`);
+      serverError(error);
+    }
+
+    return map(groupsOp, function (group) {
+      return { label: group.name, value: group.id };
     });
-    return groupResp.data.vXGroups.map(({ name, id }) => ({
-      label: name,
-      value: id
-    }));
   };
 
   const filterGrpOp = ({ data }) => {
@@ -238,19 +264,32 @@ const EditPermission = (props) => {
   };
 
   const fetchUsers = async (inputValue) => {
-    let params = {};
+    let params = { isVisible: 1 };
+    let usersOp = [];
+    let notAllowedRoles = ["ROLE_KEY_ADMIN", "ROLE_KEY_ADMIN_AUDITOR"];
     if (inputValue) {
       params["name"] = inputValue || "";
     }
-    const userResp = await fetchApi({
-      url: "xusers/users",
-      params: params
-    });
 
-    return userResp.data.vXUsers.map(({ name, id }) => ({
-      label: name,
-      value: id
-    }));
+    try {
+      const userResp = await fetchApi({
+        url: "xusers/users",
+        params: params
+      });
+      usersOp =
+        permissionData.module == "Tag Based Policies"
+          ? userResp.data?.vXUsers.filter(
+              (users) => !notAllowedRoles.includes(users.userRoleList[0])
+            )
+          : userResp.data?.vXUsers;
+    } catch (error) {
+      console.error(`Error occurred while fetching Users ! ${error}`);
+      serverError(error);
+    }
+
+    return map(usersOp, function (user) {
+      return { label: user.name, value: user.id };
+    });
   };
 
   const filterUsrOp = ({ data }) => {
@@ -286,11 +325,13 @@ const EditPermission = (props) => {
     <Loader />
   ) : (
     <div>
-      {commonBreadcrumb(
-        ["ModulePermissions", "ModulePermissionEdit"],
-        permissionData
-      )}
-      <h3 className="wrap-header bold">Edit Permission</h3>
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">Edit Permission</h3>
+        {commonBreadcrumb(
+          ["ModulePermissions", "ModulePermissionEdit"],
+          permissionData
+        )}
+      </div>
       <div className="wrap non-collapsible">
         <Form
           id="myform2"
@@ -300,8 +341,7 @@ const EditPermission = (props) => {
           render={({ handleSubmit, submitting, values }) => (
             <form onSubmit={handleSubmit}>
               <div className="form-horizontal">
-                <header>Module Details:</header>
-                <hr className="zoneheader" />
+                <p className="form-header">Module Details:</p>
 
                 <div>
                   <Field
@@ -313,7 +353,7 @@ const EditPermission = (props) => {
                         className="mb-3"
                         controlId="moduleName"
                       >
-                        <FormB.Label column sm="3" className="text-right">
+                        <FormB.Label column sm="3" className="text-end">
                           <strong>Module Name *</strong>
                         </FormB.Label>
                         <Col sm="4">
@@ -327,8 +367,7 @@ const EditPermission = (props) => {
               <br />
               <br />
               <div className="form-horizontal">
-                <header>User and Group Permissions:</header>
-                <hr className="zoneheader" />
+                <p className="form-header">User and Group Permissions:</p>
 
                 <Field
                   className="form-control"
@@ -339,11 +378,11 @@ const EditPermission = (props) => {
                       className="mb-3"
                       controlId="formPlaintextEmail"
                     >
-                      <FormB.Label className="text-right" column sm="2">
+                      <FormB.Label className="text-end" column sm="2">
                         Permissions
                       </FormB.Label>
                       <Col sm="10">
-                        <Table striped bordered>
+                        <Table bordered>
                           <thead className="table-edit-permission">
                             <tr>
                               <th width="49%">Select and Add Group</th>
@@ -356,13 +395,11 @@ const EditPermission = (props) => {
                                 <Field
                                   className="form-control"
                                   name="selectGroups"
-                                  render={({ input, meta }) => (
+                                  render={({ input }) => (
                                     <div>
                                       {" "}
                                       <AsyncSelect
                                         {...input}
-                                        menuPlacement="auto"
-                                        menuPosition="fixed"
                                         className="edit-perm-select"
                                         defaultOptions
                                         filterOption={filterGrpOp}
@@ -378,14 +415,15 @@ const EditPermission = (props) => {
                                       />
                                       <Button
                                         size="sm"
-                                        className="ml-2  m-r-sm"
+                                        className="ms-2  m-r-sm"
                                         variant="outline-secondary"
                                         onClick={() => {
                                           if (
                                             !values.selectGroups ||
                                             values.selectGroups.length === 0
                                           ) {
-                                            toast.error(
+                                            toast.dismiss(toastId.current);
+                                            toastId.current = toast.error(
                                               "Please select group!!"
                                             );
                                             return false;
@@ -425,14 +463,17 @@ const EditPermission = (props) => {
 
                                       <Button
                                         size="sm"
-                                        className="ml-2  m-r-sm"
+                                        className="ms-2  m-r-sm"
                                         variant="outline-secondary"
                                         onClick={() => {
                                           if (
                                             !values.selectuser ||
                                             values.selectuser.length === 0
                                           ) {
-                                            toast.error("Please select user!!");
+                                            toast.dismiss(toastId.current);
+                                            toastId.current = toast.error(
+                                              "Please select user!!"
+                                            );
                                             return false;
                                           }
                                           addInSelectedUsr(values, input);
@@ -448,7 +489,7 @@ const EditPermission = (props) => {
                               </td>
                             </tr>
                             <tr>
-                              {!_.isEmpty(selectedGrp) ? (
+                              {!isEmpty(selectedGrp) ? (
                                 <td>
                                   {grploading ? (
                                     <div className="permission-infinite-scroll text-center">
@@ -474,7 +515,7 @@ const EditPermission = (props) => {
                                 </td>
                               )}
 
-                              {!_.isEmpty(selectedUsr) ? (
+                              {!isEmpty(selectedUsr) ? (
                                 <td>
                                   {usrloading ? (
                                     <div className="permission-infinite-scroll text-center">
@@ -508,11 +549,8 @@ const EditPermission = (props) => {
                 />
               </div>
 
-              <br />
-              <hr />
-              <div className="text-center">
+              <div className="text-center form-actions">
                 <Button
-                  className="mr-2"
                   type="submit"
                   variant="primary"
                   size="sm"
@@ -538,6 +576,7 @@ const EditPermission = (props) => {
             </form>
           )}
         />
+        <BlockUi isUiBlock={blockUI} />
       </div>
     </div>
   );

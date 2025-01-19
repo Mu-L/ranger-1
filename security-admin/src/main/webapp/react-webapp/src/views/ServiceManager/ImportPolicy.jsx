@@ -65,7 +65,7 @@ class ImportPolicy extends Component {
     });
   };
 
-  handleFileUpload = (e) => {
+  handleFileUpload = (e, values) => {
     e.preventDefault();
     const fileReader = new FileReader();
     fileReader.readAsText(e.target.files[0]);
@@ -132,11 +132,14 @@ class ImportPolicy extends Component {
       const formFields = {};
       formFields["serviceFields"] = serviceFieldsFromJson;
       formFields["sourceZoneName"] = zoneNameJsonParseFile;
+      formFields["isOverride"] = values.isOverride;
 
       this.setState({
         fileJsonData: jsonParseFileData,
         sourceServicesMap: servicesJsonParseFile,
-        destServices:  this.props.isParentImport ? this.props.allServices : this.props.services,
+        destServices: this.props.isParentImport
+          ? this.props.allServices
+          : this.props.services,
         sourceZoneName: zoneNameJsonParseFile,
         initialFormFields: formFields,
         filterFormFields: formFields
@@ -202,7 +205,8 @@ class ImportPolicy extends Component {
     }
   };
 
-  handleSelectedZone = async (e) => {
+  handleSelectedZone = async (e, values) => {
+    const formFields = {};
     let zonesResp = [];
 
     try {
@@ -236,10 +240,10 @@ class ImportPolicy extends Component {
           };
         });
 
-        const formFields = {};
         formFields["serviceFields"] = serviceFieldsFromJson;
         formFields["sourceZoneName"] =
           this.state.initialFormFields["sourceZoneName"];
+        formFields["isOverride"] = values.isOverride;
 
         this.setState({
           destZoneName: e && e.label,
@@ -247,16 +251,24 @@ class ImportPolicy extends Component {
           filterFormFields: formFields
         });
       } else {
+        formFields["serviceFields"] =
+          this.state.initialFormFields["serviceFields"];
+        formFields["sourceZoneName"] =
+          this.state.initialFormFields["sourceZoneName"];
+        formFields["isOverride"] = values.isOverride;
+
         this.setState({
           destZoneName: "",
-          destServices:  this.props.isParentImport ? this.props.allServices : this.props.services,
-          filterFormFields: this.state.initialFormFields
+          destServices: this.props.isParentImport
+            ? this.props.allServices
+            : this.props.services,
+          filterFormFields: formFields
         });
       }
     } catch (error) {
       serverError(error);
       console.error(
-        `Error occurred while fetching Service Definitions or CSRF headers! ${error}`
+        `Error occurred while fetching Services from selected Zone! ${error}`
       );
     }
   };
@@ -274,17 +286,20 @@ class ImportPolicy extends Component {
       label: service.name
     }));
   };
-
   Theme = (theme) => {
     return {
       ...theme,
       colors: {
         ...theme.colors,
-        text: "#444444",
-        primary25: "#0b7fad;",
-        primary: "#0b7fad;"
+        primary: "#0081ab"
       }
     };
+  };
+  CustomStyles = {
+    option: (provided, state) => ({
+      ...provided,
+      color: state.isSelected ? "white" : "black"
+    })
   };
 
   requiredField = (value) =>
@@ -316,8 +331,9 @@ class ImportPolicy extends Component {
             initialValues={this.state.filterFormFields}
             render={({
               handleSubmit,
+              values,
               form: {
-                mutators: { push: addItem, pop: removeItem }
+                mutators: { push: addItem }
               }
             }) => (
               <form onSubmit={handleSubmit}>
@@ -338,8 +354,8 @@ class ImportPolicy extends Component {
                   <Modal.Body>
                     <React.Fragment>
                       <Row>
-                        <Col sm={12}>
-                          <div className="form-row">
+                        <Row sm={12}>
+                          <Col sm={7}>
                             <Field name="uploadPolicyFile">
                               {({ input }) => (
                                 <div className="form-group col-sm-6">
@@ -352,27 +368,29 @@ class ImportPolicy extends Component {
                                       type="file"
                                       className="form-control-file"
                                       accept=" .json "
-                                      onChange={this.handleFileUpload}
+                                      onChange={(e) =>
+                                        this.handleFileUpload(e, values)
+                                      }
                                     />
                                   </label>
                                 </div>
                               )}
                             </Field>
-                            <div className="form-group col-sm-6 text-center">
-                              <div className="form-check">
-                                <Field
-                                  name="isOverride"
-                                  component="input"
-                                  type="checkbox"
-                                  className="form-check-input"
-                                />
-                                <label className="form-check-label">
-                                  Override Policy
-                                </label>
-                              </div>
+                          </Col>
+                          <Col sm={5}>
+                            <div className="form-check">
+                              <Field
+                                name="isOverride"
+                                component="input"
+                                type="checkbox"
+                                className="form-check-input"
+                              />
+                              <label className="form-check-label">
+                                Override Policy
+                              </label>
                             </div>
-                          </div>
-                        </Col>
+                          </Col>
+                        </Row>
                         <Col sm={12}>
                           {this.state.fileName ? (
                             <span>
@@ -385,7 +403,7 @@ class ImportPolicy extends Component {
                               ></label>
                             </span>
                           ) : (
-                            <span className="ml-1">No File Chosen</span>
+                            <span className="ms-1">No File Chosen</span>
                           )}
                         </Col>
                         <Col sm={12}>
@@ -414,7 +432,7 @@ class ImportPolicy extends Component {
                             </Row>
                             <Row>
                               <Col sm={12}>
-                                <p className="font-weight-bold">
+                                <p className="fw-bold">
                                   Specify Zone Mapping :
                                 </p>
                               </Col>
@@ -445,12 +463,15 @@ class ImportPolicy extends Component {
                               <Col sm={1}>To</Col>
                               <Col sm={4}>
                                 <Select
-                                  onChange={this.handleSelectedZone}
+                                  onChange={(e) =>
+                                    this.handleSelectedZone(e, values)
+                                  }
                                   isClearable
                                   components={{
                                     IndicatorSeparator: () => null
                                   }}
                                   theme={this.Theme}
+                                  styles={this.CustomStyles}
                                   options={this.props.zones.map((zone) => {
                                     return {
                                       value: zone.id,
@@ -464,7 +485,7 @@ class ImportPolicy extends Component {
                             <hr />
                             <Row>
                               <Col sm={12}>
-                                <p className="font-weight-bold">
+                                <p className="fw-bold">
                                   Specify Service Mapping :
                                 </p>
                               </Col>
@@ -497,6 +518,8 @@ class ImportPolicy extends Component {
                                               options={this.getSourceServiceOptions()}
                                               menuPlacement="auto"
                                               placeholder="Enter service name"
+                                              theme={this.Theme}
+                                              styles={this.CustomStyles}
                                             />
                                             {meta.error && meta.touched && (
                                               <span className="invalid-field">
@@ -522,6 +545,8 @@ class ImportPolicy extends Component {
                                               options={this.getDestServiceOptions()}
                                               menuPlacement="auto"
                                               placeholder="Select service name"
+                                              theme={this.Theme}
+                                              styles={this.CustomStyles}
                                             />
                                             {meta.error && meta.touched && (
                                               <span className="invalid-field">
@@ -595,7 +620,7 @@ class ImportPolicy extends Component {
                   ) : (
                     <Button
                       variant="primary"
-                      className="btn-mini"
+                      size="sm"
                       onClick={this.props.onHide}
                     >
                       OK

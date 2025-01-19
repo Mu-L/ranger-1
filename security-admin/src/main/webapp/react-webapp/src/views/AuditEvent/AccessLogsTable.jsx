@@ -22,7 +22,11 @@ import { Button, Table } from "react-bootstrap";
 import dateFormat from "dateformat";
 import { isEmpty } from "lodash";
 import { toast } from "react-toastify";
-import { ServiceType } from "../../utils/XAEnums";
+import {
+  ServiceRequestDataRangerAcl,
+  ServiceRequestDataHadoopAcl
+} from "../../utils/XAEnums";
+import { requestDataTitle } from "../../utils/XAUtils";
 
 export const AccessLogsTable = ({ data = {} }) => {
   const {
@@ -47,7 +51,9 @@ export const AccessLogsTable = ({ data = {} }) => {
     eventCount,
     zoneName,
     requestData,
-    tags
+    tags,
+    datasets,
+    projects
   } = data;
 
   const copyText = (val) => {
@@ -104,22 +110,46 @@ export const AccessLogsTable = ({ data = {} }) => {
           <td>Resource Type</td>
           <td>{!isEmpty(resourceType) ? resourceType : "--"}</td>
         </tr>
-        {(serviceType == ServiceType.Service_HIVE.label ||
-          serviceType == ServiceType.Service_HBASE.label ||
-          serviceType == ServiceType.Service_HDFS.label ||
-          serviceType == ServiceType.Service_SOLR.label) &&
+        {ServiceRequestDataRangerAcl.includes(serviceType) &&
           aclEnforcer === "ranger-acl" &&
           !isEmpty(requestData) && (
             <tr>
-              <td>{serviceType} Query</td>
+              <td>{requestDataTitle(serviceType)}</td>
               <td>
                 {!isEmpty(requestData) ? (
                   <>
                     <Button
-                      className="pull-right link-tag query-icon btn btn-sm"
+                      className="float-end link-tag query-icon btn btn-sm"
                       size="sm"
                       variant="link"
-                      title="Copied!"
+                      title="Copy"
+                      onClick={() =>
+                        navigator.clipboard.writeText(copyText(requestData))
+                      }
+                    >
+                      <i className="fa-fw fa fa-copy"> </i>
+                    </Button>
+                    <span>{requestData}</span>
+                  </>
+                ) : (
+                  "--"
+                )}
+              </td>
+            </tr>
+          )}
+        {ServiceRequestDataHadoopAcl.includes(serviceType) &&
+          aclEnforcer === "hadoop-acl" &&
+          !isEmpty(requestData) && (
+            <tr>
+              <td>{requestDataTitle(serviceType)}</td>
+              <td>
+                {!isEmpty(requestData) ? (
+                  <>
+                    <Button
+                      className="float-end link-tag query-icon btn btn-sm"
+                      size="sm"
+                      variant="link"
+                      title="Copy"
                       onClick={() =>
                         navigator.clipboard.writeText(copyText(requestData))
                       }
@@ -144,14 +174,20 @@ export const AccessLogsTable = ({ data = {} }) => {
         </tr>
         <tr>
           <td>Result</td>
-          <td>{accessResult == 1 ? "Allowed" : "Denied"}</td>
+          <td>
+            {accessResult !== undefined
+              ? accessResult == 1
+                ? "Allowed"
+                : "Denied"
+              : "--"}
+          </td>
         </tr>
         <tr>
-          <td className="text-nowrap">Access Enforcer</td>
+          <td>Access Enforcer</td>
           <td>{!isEmpty(aclEnforcer) ? aclEnforcer : "--"}</td>
         </tr>
         <tr>
-          <td className="text-nowrap">Agent Host Name </td>
+          <td>Agent Host Name </td>
           <td>{!isEmpty(agentHost) ? agentHost : "--"}</td>
         </tr>
         <tr>
@@ -181,6 +217,18 @@ export const AccessLogsTable = ({ data = {} }) => {
                   .sort()
                   .join(", ")
               : "--"}
+          </td>
+        </tr>
+        <tr>
+          <td>Datasets</td>
+          <td>
+            {!isEmpty(datasets) ? JSON.parse(datasets).sort().join(", ") : "--"}
+          </td>
+        </tr>
+        <tr>
+          <td>Projects</td>
+          <td>
+            {!isEmpty(projects) ? JSON.parse(projects).sort().join(", ") : "--"}
           </td>
         </tr>
       </tbody>

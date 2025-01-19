@@ -17,16 +17,16 @@
  * under the License.
  */
 
-import React, { useEffect, useReducer, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Form as FormB, Row, Col } from "react-bootstrap";
 import { Field } from "react-final-form";
 import Select from "react-select";
 import BootstrapSwitchButton from "bootstrap-switch-button-react";
-import AsyncCreatableSelect from "react-select/async-creatable";
-import { debounce, filter, groupBy, some, sortBy } from "lodash";
-
-import { fetchApi } from "Utils/fetchAPI";
-import { RangerPolicyType } from "Utils/XAEnums";
+import { filter, groupBy, some } from "lodash";
+import { toast } from "react-toastify";
+import { udfResourceWarning } from "../../utils/XAMessages";
+import ResourceSelectComp from "./ResourceSelectComp";
+import { getResourcesDefVal } from "../../utils/XAUtils";
 
 const noneOptions = {
   label: "None",
@@ -39,18 +39,15 @@ export default function ResourceComp(props) {
     formValues,
     serviceDetails,
     policyType,
-    policyItem,
-    policyId
+    policyId,
+    name,
+    isMultiResources,
+    isGds
   } = props;
   const [rsrcState, setLoader] = useState({ loader: false, resourceKey: -1 });
-  let resources = sortBy(serviceCompDetails.resources, "itemId");
-  if (RangerPolicyType.RANGER_MASKING_POLICY_TYPE.value == policyType) {
-    resources = sortBy(serviceCompDetails.dataMaskDef.resources, "itemId");
-  } else if (
-    RangerPolicyType.RANGER_ROW_FILTER_POLICY_TYPE.value == policyType
-  ) {
-    resources = sortBy(serviceCompDetails.rowFilterDef.resources, "itemId");
-  }
+  const toastId = useRef(null);
+
+  let resources = getResourcesDefVal(serviceCompDetails, policyType);
 
   useEffect(() => {
     if (rsrcState.loader) {
@@ -68,50 +65,11 @@ export default function ResourceComp(props) {
   }
   grpResourcesKeys = grpResourcesKeys.sort();
 
-  const fetchResourceLookup = async (
-    inputValue,
-    resourceObj,
-    selectedValues,
-    callback
-  ) => {
-    let resourceName = resourceObj.name;
-    let data = {
-      resourceName,
-      resources: {
-        [resourceName]: selectedValues?.map?.(({ value }) => value) || []
-      }
-    };
-    if (inputValue) {
-      data["userInput"] = inputValue || "";
-    }
-
-    let op = [];
-    try {
-      if (resourceObj.lookupSupported) {
-        const resourceResp = await fetchApi({
-          url: `plugins/services/lookupResource/${serviceDetails.name}`,
-          method: "POST",
-          data
-        });
-        op =
-          resourceResp.data?.map?.((name) => ({
-            label: name,
-            value: name
-          })) || [];
-      }
-    } catch (error) {}
-
-    callback(op);
-  };
-
-  const _fetchResourceLookup = debounce(fetchResourceLookup, 1000);
-
   const getResourceLabelOp = (levelKey, index) => {
     let op = grpResources[levelKey];
     if (index !== 0) {
       let previousKey = grpResourcesKeys[index - 1];
       const parentResourceKey = `resourceName-${previousKey}`;
-      const resourceKey = `resourceName-${levelKey}`;
       if (formValues && formValues[parentResourceKey]) {
         op = filter(grpResources[levelKey], {
           parent: formValues[parentResourceKey].name
@@ -126,9 +84,8 @@ export default function ResourceComp(props) {
 
   const RenderValidateField = ({ name }) =>
     (formValues && formValues[name]?.mandatory && (
-      <span className="compulsory-resource">*</span>
-    )) ||
-    null;
+      <span className={!isGds ? "" : "top-0"}>*</span>
+    )) || <span>&nbsp;</span>;
 
   const renderResourceSelect = (levelKey, index) => {
     let renderLabel = false;
@@ -137,10 +94,7 @@ export default function ResourceComp(props) {
     if (index !== 0) {
       levelOp = getResourceLabelOp(levelKey, index);
     }
-    if (
-      levelOp.length === 1 &&
-      !formValues[resourceKey].hasOwnProperty("parent")
-    ) {
+    if (levelOp.length === 1 && !formValues[resourceKey]?.parent?.length > 0) {
       renderLabel = true;
     } else {
       if (index !== 0) {
@@ -170,7 +124,7 @@ export default function ResourceComp(props) {
   };
 
   const handleResourceChange = (selectedVal, input, index) => {
-    for (let i = index + 1; i < grpResourcesKeys.length; i++) {
+    for (let i = index; i < grpResourcesKeys.length; i++) {
       let levelKey = grpResourcesKeys[i];
 
       delete formValues[`resourceName-${levelKey}`];
@@ -178,36 +132,31 @@ export default function ResourceComp(props) {
       delete formValues[`isExcludesSupport-${levelKey}`];
       delete formValues[`isRecursiveSupport-${levelKey}`];
     }
-    if (policyItem) {
-      removedSeletedAccess();
+    delete formValues[`value-${grpResourcesKeys[index]}`];
+    let CurrentSelectedResourcs = selectedVal.name;
+    for (let j = index + 1; j < grpResourcesKeys.length; j++) {
+      let level = grpResourcesKeys[j];
+      let nextResource = resources.find((m) => {
+        if (m?.parent) {
+          return m.parent === CurrentSelectedResourcs;
+        }
+      });
+      if (nextResource) {
+        formValues[`resourceName-${level}`] = nextResource;
+        CurrentSelectedResourcs = nextResource.name;
+      }
     }
+
+    if (selectedVal?.name === "udf" && selectedVal?.parent === "database") {
+      toast.dismiss(toastId.current);
+      toastId.current = toast.warning(udfResourceWarning());
+    }
+
+    input.onChange(selectedVal);
     setLoader({
       loader: true,
       resourceKey: grpResourcesKeys[index]
     });
-    delete formValues[`value-${grpResourcesKeys[index]}`];
-    input.onChange(selectedVal);
-  };
-
-  const removedSeletedAccess = () => {
-    for (const name of [
-      "policyItems",
-      "allowExceptions",
-      "denyPolicyItems",
-      "denyExceptions"
-    ]) {
-      for (const policyObj of formValues[name]) {
-        if (policyObj?.accesses) {
-          policyObj.accesses = [];
-        }
-      }
-    }
-  };
-
-  const required = (value) => {
-    if (!value || value.length == 0) {
-      return "Required";
-    }
   };
 
   return grpResourcesKeys.map((levelKey, index) => {
@@ -222,113 +171,79 @@ export default function ResourceComp(props) {
       return null;
     }
 
-    const customStyles = {
-      container: () => ({
-        width: "75%",
-        display: "inline-block",
-        float: "right"
-      })
-    };
-
     return (
       <FormB.Group
         as={Row}
         className="mb-3"
-        controlId="policyName"
+        controlId={`Resource-${levelKey}`}
         key={`Resource-${levelKey}`}
       >
         <Col sm={3}>
           <Field
-            defaultValue={getResourceLabelOp(levelKey, index)[0]}
-            className="form-control"
-            name={`resourceName-${levelKey}`}
-            render={({ input, meta }) =>
+            defaultValue={!policyId && getResourceLabelOp(levelKey, index)[0]}
+            name={
+              isMultiResources
+                ? `${name}.resourceName-${levelKey}`
+                : `resourceName-${levelKey}`
+            }
+            render={({ input }) =>
               formValues[resourceKey] ? (
                 renderResourceSelect(levelKey, index) ? (
-                  <span className="pull-right fnt-14">
-                    <FormB.Label>
+                  <span className="float-end fnt-14">
+                    <FormB.Label className="position-relative pe-2">
                       {getResourceLabelOp(levelKey, index)[0]["label"]}
+                      <RenderValidateField name={`resourceName-${levelKey}`} />
                     </FormB.Label>
-                    <RenderValidateField name={`resourceName-${levelKey}`} />
                   </span>
                 ) : (
-                  <>
-                    <Select
-                      {...input}
-                      options={getResourceLabelOp(levelKey, index)}
-                      getOptionLabel={(obj) => obj.label}
-                      getOptionValue={(obj) => obj.name}
-                      onChange={(value) =>
-                        handleResourceChange(value, input, index)
-                      }
-                      styles={customStyles}
-                    />
+                  <div className="resource-drop-down">
+                    <span className="w-75">
+                      <Select
+                        {...input}
+                        options={getResourceLabelOp(levelKey, index)}
+                        getOptionLabel={(obj) => obj.label}
+                        getOptionValue={(obj) => obj.name}
+                        onChange={(value) =>
+                          handleResourceChange(value, input, index)
+                        }
+                        isSearchable={false}
+                      />
+                    </span>
                     <RenderValidateField name={`resourceName-${levelKey}`} />
-                  </>
+                  </div>
                 )
               ) : null
             }
           />
         </Col>
+
         {formValues[`resourceName-${levelKey}`] && (
-          <Col sm={5}>
-            <Field
-              key={formValues[`resourceName-${levelKey}`].name}
-              className="form-control"
-              name={`value-${levelKey}`}
-              validate={
-                formValues &&
-                formValues[`resourceName-${levelKey}`]?.mandatory &&
-                required
-              }
-              render={({ input, meta }) => (
-                <>
-                  <AsyncCreatableSelect
-                    {...input}
-                    id={
-                      formValues &&
-                      formValues[`resourceName-${levelKey}`]?.mandatory &&
-                      meta.error &&
-                      meta.touched
-                        ? "isError"
-                        : `value-${levelKey}`
-                    }
-                    defaultOptions
-                    isMulti
-                    isDisabled={
-                      formValues[`resourceName-${levelKey}`].value ===
-                      noneOptions.value
-                    }
-                    loadOptions={(inputValue) =>
-                      new Promise((resolve, reject) => {
-                        _fetchResourceLookup(
-                          inputValue,
-                          formValues[`resourceName-${levelKey}`],
-                          input.value,
-                          resolve
-                        );
-                      })
-                    }
-                  />
-                  {formValues &&
-                    formValues[`resourceName-${levelKey}`]?.mandatory &&
-                    meta.touched &&
-                    meta.error && (
-                      <span className="invalid-field">{meta.error}</span>
-                    )}
-                </>
-              )}
-            />
-          </Col>
+          <>
+            <Col sm={!isGds ? 5 : 9}>
+              <ResourceSelectComp
+                levelKey={levelKey}
+                formValues={formValues}
+                grpResourcesKeys={grpResourcesKeys}
+                serviceDetails={serviceDetails}
+                name={name}
+                isMultiResources={isMultiResources}
+              />
+            </Col>
+          </>
         )}
-        {formValues[`resourceName-${levelKey}`] && (
+
+        {formValues[`resourceName-${levelKey}`] && !isGds && (
           <Col sm={4}>
             <Row>
               {formValues[`resourceName-${levelKey}`]["excludesSupported"] && (
                 <Col sm={5}>
                   <Field
                     className="form-control"
-                    name={`isExcludesSupport-${levelKey}`}
+                    name={
+                      isMultiResources
+                        ? `${name}.isExcludesSupport-${levelKey}`
+                        : `isExcludesSupport-${levelKey}`
+                    }
                     render={({ input }) => (
                       <BootstrapSwitchButton
                         {...input}
@@ -349,7 +264,11 @@ export default function ResourceComp(props) {
                 <Col sm={5} className="toggle-switch">
                   <Field
                     className="form-control"
-                    name={`isRecursiveSupport-${levelKey}`}
+                    name={
+                      isMultiResources
+                        ? `${name}.isRecursiveSupport-${levelKey}`
+                        : `isRecursiveSupport-${levelKey}`
+                    }
                     render={({ input }) => (
                       <BootstrapSwitchButton
                         {...input}

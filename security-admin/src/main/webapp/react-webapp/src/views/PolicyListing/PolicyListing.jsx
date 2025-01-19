@@ -18,6 +18,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { omit, has } from "lodash";
 import {
   Link,
   useParams,
@@ -37,7 +38,8 @@ import {
   sortBy,
   find,
   concat,
-  camelCase
+  camelCase,
+  union
 } from "lodash";
 import { fetchApi } from "Utils/fetchAPI";
 import XATableLayout from "Components/XATableLayout";
@@ -55,13 +57,23 @@ import {
   isPolicyExpired,
   isSystemAdmin,
   isKeyAdmin,
-  isUser
+  isUser,
+  parseSearchFilter,
+  getResourcesDefVal
 } from "../../utils/XAUtils";
-import { alertMessage } from "../../utils/XAEnums";
-import { BlockUi, Loader } from "../../components/CommonComponents";
+import {
+  alertMessage,
+  ResourcesOverrideInfoMsg,
+  ServerAttrName
+} from "../../utils/XAEnums";
+import {
+  BlockUi,
+  CustomPopover,
+  Loader
+} from "../../components/CommonComponents";
 
 function PolicyListing(props) {
-  const { serviceDef } = props;
+  const { serviceDef, serviceData, serviceZone } = props;
   const { state } = useLocation();
   const [policyListingData, setPolicyData] = useState([]);
   const [loader, setLoader] = useState(true);
@@ -101,6 +113,70 @@ function PolicyListing(props) {
   let navigate = useNavigate();
   let { serviceId, policyType } = useParams();
 
+  const [showModal, setShowModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleFileSelection = (event) => {
+    const file = event.target.files[0];
+    setSelectedFile(file); // Store selected file
+    setStatusMessage("");
+  };
+
+  const importNewPolicy = () => {
+    setShowModal(true); // Show the modal when button is clicked
+  };
+
+  const handleCloseModal = () => {
+    setSelectedFile(null); // Reset the selected file
+    setStatusMessage("");
+    setShowModal(false);
+  };
+
+  const handleUpload = () => {
+    if (!selectedFile) {
+      setStatusMessage("No file selected !");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const json = JSON.parse(e.target.result);
+
+        if (has("service")) {
+          json["service"] = serviceData.name;
+        }
+
+        // Make API call with the processed JSON
+        setLoading(true); // Show loading spinner
+        await fetchApi({
+          url: "plugins/policies",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json" // Set Content-Type header
+          },
+          data: JSON.stringify(json) // Serialize the JSON
+        });
+
+        setLoading(false); // Hide loading spinner
+        setStatusMessage("");
+        setShowModal(false);
+        setUpdateTable(moment.now());
+        toast.success("Successfully imported policy json file !");
+      } catch (error) {
+        setLoading(false);
+        setStatusMessage(
+          `Error parsing or processing JSON file: ${error.message}`
+        );
+        console.log(error);
+      }
+    };
+
+    reader.readAsText(selectedFile);
+  };
+
   useEffect(() => {
     let searchFilterParam = {};
     let searchParam = {};
@@ -108,10 +184,8 @@ function PolicyListing(props) {
 
     // Get Search Filter Params from current search params
     const currentParams = Object.fromEntries([...searchParams]);
-    console.log("PRINT search params : ", currentParams);
-
     for (const param in currentParams) {
-      let searchFilterObj = find(getSearchFilterOption(), {
+      let searchFilterObj = find(getSearchFilterOptions(), {
         urlLabel: param
       });
 
@@ -135,7 +209,7 @@ function PolicyListing(props) {
     }
 
     // Updating the states for search params, search filter and default search filter
-    setSearchParams({ ...currentParams, ...searchParam });
+    setSearchParams({ ...currentParams, ...searchParam }, { replace: true });
     if (
       JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
     ) {
@@ -143,18 +217,14 @@ function PolicyListing(props) {
     }
     setDefaultSearchFilterParams(defaultSearchFilterParam);
     setPageLoader(false);
-
-    console.log(
-      "PRINT Final searchFilterParam to server : ",
-      searchFilterParam
-    );
-    console.log(
-      "PRINT Final defaultSearchFilterParam to tokenzier : ",
-      defaultSearchFilterParam
-    );
     localStorage.setItem("newDataAdded", state && state.showLastPage);
   }, [searchParams]);
 
+  useEffect(() => {
+    if (localStorage.getItem("newDataAdded") == "true") {
+      scrollToNewData(policyListingData);
+    }
+  }, [totalCount]);
   const getTableSortBy = (sortArr = []) => {
     return sortArr
       .map(({ id }) => {
@@ -165,6 +235,65 @@ function PolicyListing(props) {
 
   const getTableSortType = (sortArr = []) => {
     return sortArr.map(({ desc }) => (desc ? "desc" : "asc")).join(",");
+  };
+
+  const downloadPolicy = async (id) => {
+    try {
+      const response = await fetchApi({
+        url: `plugins/policies/${id}`
+      });
+
+      if (response.status !== 200) {
+        toast.error("Error downloading the policy !");
+        return;
+      }
+
+      let data = response.data || null;
+
+      data = JSON.parse(JSON.stringify(data));
+
+      const fieldsToRemove = [
+        "createdBy",
+        "createTime",
+        "guid",
+        "id",
+        "resourceSignature",
+        "updatedBy",
+        "updateTime",
+        "version"
+      ];
+
+      data = omit(data, fieldsToRemove);
+
+      // Create a blob with the JSON data
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json"
+      });
+      const url = URL.createObjectURL(blob);
+
+      // Create a link element and set its href to the blob URL
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        data["serviceType"] +
+          "_" +
+          data["service"] +
+          "_" +
+          data["name"] +
+          "-" +
+          "policy_" +
+          id +
+          ".json" || "policy-data.json"; // Set the default filename for the download
+      document.body.appendChild(a);
+      a.click();
+
+      // Clean up
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error("Error downloading the policy !");
+      console.error("Error fetching data: ", error);
+    }
   };
 
   const fetchPolicyInfo = useCallback(
@@ -192,10 +321,9 @@ function PolicyListing(props) {
           params["sortBy"] = getTableSortBy(sortBy);
           params["sortType"] = getTableSortType(sortBy);
         }
-        if (localStorage.getItem("zoneDetails") != null) {
-          params["zoneName"] = JSON.parse(
-            localStorage.getItem("zoneDetails")
-          ).label;
+
+        if (serviceZone !== null) {
+          params["zoneName"] = serviceZone.label;
         }
         try {
           policyResp = await fetchApi({
@@ -214,7 +342,7 @@ function PolicyListing(props) {
         setPolicyData(policyData);
         setTblPageData({
           totalPage: totalPageCount,
-          pageRecords: policyResp.data.totalCount,
+          pageRecords: policyResp?.data?.totalCount,
           pageSize: 25
         });
         setTotalCount(totalCount);
@@ -223,14 +351,7 @@ function PolicyListing(props) {
         setCurrentPageSize(pageSize);
         setResetpage({ page: gotoPage });
         setLoader(false);
-        if (
-          page == totalPageCount - 1 &&
-          localStorage.getItem("newDataAdded") == "true"
-        ) {
-          scrollToNewData(policyData, policyResp.data.resultSize);
-        }
       }
-      localStorage.removeItem("newDataAdded");
     },
     [updateTable, searchFilterParams]
   );
@@ -297,11 +418,13 @@ function PolicyListing(props) {
         errorMsg += error.response.data.msgDesc;
       }
       toast.error(errorMsg);
-      console.log("Error occurred during deleting policy : " + error);
+      console.error("Error occurred during deleting policy : " + error);
     }
-    if (policyListingData.length == 1 && currentpageIndex > 1) {
+    if (policyListingData.length == 1 && currentpageIndex > 0) {
       let page = currentpageIndex - currentpageIndex;
-      resetPage.page(page);
+      if (typeof resetPage?.page === "function") {
+        resetPage.page(page);
+      }
     } else {
       setUpdateTable(moment.now());
     }
@@ -439,7 +562,7 @@ function PolicyListing(props) {
           return !isEmpty(rawValue.value) ? (
             <MoreLess data={rawValue.value} />
           ) : (
-            <div>--</div>
+            <div className="text-center">--</div>
           );
         },
         width: 130,
@@ -452,13 +575,13 @@ function PolicyListing(props) {
           if (rawValue.value)
             return (
               <h6>
-                <Badge variant="success">Enabled</Badge>
+                <Badge bg="success">Enabled</Badge>
               </h6>
             );
           else
             return (
               <h6>
-                <Badge variant="danger">Disabled</Badge>
+                <Badge bg="danger">Disabled</Badge>
               </h6>
             );
         },
@@ -472,13 +595,13 @@ function PolicyListing(props) {
           if (rawValue.value) {
             return (
               <h6>
-                <Badge variant="success">Enabled</Badge>
+                <Badge bg="success">Enabled</Badge>
               </h6>
             );
           } else
             return (
               <h6>
-                <Badge variant="danger">Disabled</Badge>
+                <Badge bg="danger">Disabled</Badge>
               </h6>
             );
         },
@@ -548,7 +671,7 @@ function PolicyListing(props) {
               <Button
                 variant="outline-dark"
                 size="sm"
-                className="mr-2"
+                className="me-2"
                 title="View"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -561,8 +684,20 @@ function PolicyListing(props) {
               </Button>
               {(isSystemAdmin() || isKeyAdmin() || isUser()) && (
                 <>
+                  <Button
+                    className="me-2"
+                    variant="outline-dark"
+                    size="sm"
+                    title="Download"
+                    onClick={() => downloadPolicy(original.id)}
+                    data-name="downloadPolicy"
+                    data-id={original.id}
+                    data-cy={original.id}
+                  >
+                    <i className="fa-fw fa fa-download fa-fw fa fa-large"></i>
+                  </Button>
                   <Link
-                    className="btn btn-outline-dark btn-sm mr-2"
+                    className="btn btn-outline-dark btn-sm me-2"
                     title="Edit"
                     to={`/service/${serviceId}/policies/${original.id}/edit`}
                   >
@@ -586,7 +721,8 @@ function PolicyListing(props) {
             </div>
           );
         },
-        disableSortBy: true
+        disableSortBy: true,
+        minWidth: 190
       }
     ],
     []
@@ -598,7 +734,7 @@ function PolicyListing(props) {
     });
   };
 
-  const searchFilterOption = [
+  const searchFilterOptions = [
     {
       category: "group",
       label: "Group Name",
@@ -643,11 +779,14 @@ function PolicyListing(props) {
     }
   ];
 
-  const getSearchFilterOption = () => {
+  const getSearchFilterOptions = () => {
     let currentServiceDef = serviceDef;
 
     if (currentServiceDef !== undefined) {
-      let serviceDefResource = currentServiceDef.resources;
+      let serviceDefResource = getResourcesDefVal(
+        currentServiceDef,
+        policyType
+      );
 
       let serviceDefResourceOption = serviceDefResource?.map((obj) => ({
         category: "resource:" + obj.name,
@@ -656,65 +795,94 @@ function PolicyListing(props) {
         type: "text"
       }));
 
-      return sortBy(concat(searchFilterOption, serviceDefResourceOption), [
+      return sortBy(concat(searchFilterOptions, serviceDefResourceOption), [
         "label"
       ]);
     }
 
-    return sortBy(searchFilterOption, ["label"]);
+    return sortBy(searchFilterOptions, ["label"]);
+  };
+
+  const getSearchInfoContent = () => {
+    let resources = [];
+    let resourceSearchOpt = [];
+    let serverRsrcAttrName = [];
+    let policySearchInfoMsg = [];
+
+    resources = getResourcesDefVal(serviceDef, policyType);
+
+    resourceSearchOpt = map(resources, function (resource) {
+      return {
+        name: resource.name,
+        label: resource.label,
+        description: resource.description
+      };
+    });
+
+    serverRsrcAttrName = map(resourceSearchOpt, function (opt) {
+      return {
+        text: opt.label,
+        info: !isUndefined(opt?.description)
+          ? opt.description
+          : ResourcesOverrideInfoMsg[opt.name]
+      };
+    });
+
+    policySearchInfoMsg = union(ServerAttrName, serverRsrcAttrName);
+
+    return (
+      <div className="policy-search-info">
+        <p className="m-0">
+          Wildcard searches ( for example using * or ? ) are not currently
+          supported.
+        </p>
+        {policySearchInfoMsg?.map((m, index) => {
+          return (
+            <p className="m-0" key={index}>
+              <span className="fw-bold">{m.text}: </span>
+              <span>{m.info}</span>
+            </p>
+          );
+        })}
+      </div>
+    );
   };
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      getSearchFilterOptions()
+    );
 
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(getSearchFilterOption(), {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
-    resetPage.page(0);
+    setSearchParams(searchParam, { replace: true });
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   return (
     <div className="wrap">
-      {(props.serviceData.type == "hdfs" || props.serviceData.type == "yarn") &&
-        show && (
-          <Alert variant="warning" onClose={() => setShow(false)} dismissible>
-            <i className="fa-fw fa fa-info-circle d-inline text-dark"></i>
-            <p className="pd-l-10 d-inline">
-              {`By default, fallback to ${
-                alertMessage[props.serviceData.type].label
-              } ACLs are enabled. If access cannot be
+      {(serviceData.type == "hdfs" || serviceData.type == "yarn") && show && (
+        <Alert variant="warning" onClose={() => setShow(false)} dismissible>
+          <i className="fa-fw fa fa-info-circle d-inline text-dark"></i>
+          <p className="pd-l-10 d-inline">
+            {`By default, fallback to ${
+              alertMessage[serviceData.type].label
+            } ACLs are enabled. If access cannot be
               determined by Ranger policies, authorization will fall back to
               ${
-                alertMessage[props.serviceData.type].label
+                alertMessage[serviceData.type].label
               } ACLs. If this behavior needs to be changed, modify ${
-                alertMessage[props.serviceData.type].label
+                alertMessage[serviceData.type].label
               }
               plugin config - ${
-                alertMessage[props.serviceData.type].configs
+                alertMessage[serviceData.type].configs
               }-authorization.`}
-            </p>
-          </Alert>
-        )}
+          </p>
+        </Alert>
+      )}
       {pageLoader ? (
         <Loader />
       ) : (
@@ -722,28 +890,53 @@ function PolicyListing(props) {
           <BlockUi isUiBlock={blockUI} />
           <div className="policy-listing">
             <Row className="mb-3">
-              <Col sm={10}>
-                <StructuredFilter
-                  key="policy-listing-search-filter"
-                  placeholder="Search for your policy..."
-                  options={getSearchFilterOption()}
-                  onTokenAdd={updateSearchFilter}
-                  onTokenRemove={updateSearchFilter}
-                  defaultSelected={defaultSearchFilterParams}
-                />
+              <Col sm={9}>
+                <div className="filter-icon-wrap">
+                  <StructuredFilter
+                    key="policy-listing-search-filter"
+                    placeholder="Search for your policy..."
+                    options={getSearchFilterOptions()}
+                    onChange={updateSearchFilter}
+                    defaultSelected={defaultSearchFilterParams}
+                  />
+                  <CustomPopover
+                    icon="fa-fw fa fa-info-circle info-icon"
+                    title={
+                      <span style={{ fontSize: "14px" }}>
+                        Search Filter Hints
+                      </span>
+                    }
+                    content={getSearchInfoContent()}
+                    placement="bottom"
+                    trigger={["hover", "focus"]}
+                  />
+                </div>
               </Col>
-              <Col sm={2}>
-                <div className="pull-right mb-1">
+              <Col sm={3}>
+                <div className="float-end mb-1">
                   {(isSystemAdmin() || isKeyAdmin() || isUser()) && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={addPolicy}
-                      data-js="addNewPolicy"
-                      data-cy="addNewPolicy"
-                    >
-                      Add New Policy
-                    </Button>
+                    <div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="ms-1"
+                        onClick={addPolicy}
+                        data-js="addNewPolicy"
+                        data-cy="addNewPolicy"
+                      >
+                        Add New Policy
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="ms-1"
+                        onClick={importNewPolicy}
+                        data-js="importNewPolicy"
+                        data-cy="importNewPolicy"
+                      >
+                        Import New Policy
+                      </Button>
+                    </div>
                   )}
                 </div>
               </Col>
@@ -763,8 +956,43 @@ function PolicyListing(props) {
             />
           </div>
 
+          {/* Modal for file upload */}
+          {showModal && (
+            <Modal show={showModal} onHide={handleCloseModal}>
+              <Modal.Header closeButton>
+                <Modal.Title>Upload JSON Policy</Modal.Title>
+              </Modal.Header>
+              <Modal.Body>
+                <input
+                  type="file"
+                  accept="application/json"
+                  onChange={handleFileSelection}
+                />
+                {loading && <p>Uploading...</p>}
+                {!loading && statusMessage && <p>{statusMessage}</p>}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleCloseModal}
+                >
+                  Close
+                </Button>
+                <Button size="sm" variant="primary" onClick={handleUpload}>
+                  Upload
+                </Button>
+              </Modal.Footer>
+            </Modal>
+          )}
+
           <Modal show={deletePolicyModal.showPopup} onHide={toggleClose}>
-            <Modal.Body>Are you sure you want to delete</Modal.Body>
+            <Modal.Header closeButton>
+              <span className="text-word-break">
+                Are you sure you want to delete policy&nbsp;&quot;
+                <b>{deletePolicyModal?.policyDetails?.policyName}</b>&quot; ?
+              </span>
+            </Modal.Header>
             <Modal.Footer>
               <Button variant="secondary" size="sm" onClick={toggleClose}>
                 Close
@@ -788,7 +1016,6 @@ function PolicyListing(props) {
             <Modal.Body>
               <PolicyViewDetails
                 paramsData={policyParamsData}
-                serviceDef={serviceDef}
                 policyInfo={fetchPolicyInfo}
                 totalCount={totalCount}
                 policyView={true}
@@ -796,7 +1023,7 @@ function PolicyListing(props) {
               />
             </Modal.Body>
             <Modal.Footer>
-              <div className="policy-version text-left">
+              <div className="policy-version text-start">
                 <span>
                   <i
                     className={
