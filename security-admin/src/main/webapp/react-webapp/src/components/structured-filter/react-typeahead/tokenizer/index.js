@@ -23,7 +23,7 @@ import KeyEvent from "../keyevent";
 import Typeahead from "../typeahead";
 import createReactClass from "create-react-class";
 import PropTypes from "prop-types";
-import { find, map, difference, includes } from "lodash";
+import { find, filter, map, some, trim, includes } from "lodash";
 var classNames = require("classnames");
 /**
  * A typeahead that, when an option is selected, instead of simply filling
@@ -38,8 +38,7 @@ var TypeaheadTokenizer = createReactClass({
     defaultSelected: PropTypes.array,
     defaultValue: PropTypes.string,
     placeholder: PropTypes.string,
-    onTokenRemove: PropTypes.func,
-    onTokenAdd: PropTypes.func
+    onChange: PropTypes.func
   },
 
   componentWillReceiveProps(nextProps) {
@@ -64,9 +63,7 @@ var TypeaheadTokenizer = createReactClass({
       defaultSelected: [],
       customClasses: {},
       defaultValue: "",
-      placeholder: "",
-      onTokenAdd: function () {},
-      onTokenRemove: function () {}
+      placeholder: ""
     };
   },
 
@@ -76,33 +73,55 @@ var TypeaheadTokenizer = createReactClass({
     tokenClasses[this.props.customClasses.token] =
       !!this.props.customClasses.token;
     var classList = classNames(tokenClasses);
-    var result = this.state.selected.map(function (selected) {
-      let mykey = selected.category + selected.value;
+    var result = this.state.selected.map(function (selected, index) {
+      let mykey = selected.category + selected.value + index;
       let categoryLabel = this._getFilterCategoryLabel(selected.category);
       let categoryValue = this._getFilterCategoryLabelForOption(
         selected.category,
         selected.value
       );
       return (
-        <Token
-          key={mykey}
-          className={classList}
-          onRemove={this._removeTokenForValue}
-          categoryLabel={categoryLabel}
-          categoryValue={categoryValue}
-        >
-          {selected}
-        </Token>
+        some(this.props.options, ["category", selected.category]) && (
+          <Token
+            key={mykey}
+            className={classList}
+            onRemove={this._removeTokenForValue}
+            categoryLabel={categoryLabel}
+            categoryValue={categoryValue}
+            index={index}
+            allSelected={this.state.selected}
+            selectedCategory={selected.category}
+            _getOptionsForTypeaheadValue={this._getOptionsForTypeaheadValue}
+            _getValueOptionsLabel={this._getValueOptionsLabel}
+            _getInputType={this._getInputType}
+            _getFullOptions={this._getFullOptions()}
+            setFiltersValue={this.setFiltersValue}
+          >
+            {selected}
+          </Token>
+        )
       );
     }, this);
     return result;
+  },
+
+  _getFullOptions: function () {
+    return this.props.options;
   },
 
   _getOptionsForTypeahead: function () {
     if (this.state.category == "") {
       var categories = [];
       let selectedCategory = [];
-      selectedCategory = map(this.state.selected, "category");
+      let bypassCategory = map(
+        filter(this.props.options, ["addMultiple", true]),
+        "category"
+      );
+      selectedCategory = this.state.selected
+        .map((item) => {
+          if (!bypassCategory.includes(item.category)) return item.category;
+        })
+        .filter(Boolean);
       for (var i = 0; i < this.props.options.length; i++) {
         selectedCategory.indexOf(this.props.options[i].category) === -1 &&
           categories.push(this.props.options[i].category);
@@ -113,8 +132,12 @@ var TypeaheadTokenizer = createReactClass({
       if (options == null) return [];
       else return map(options(), "value");
     }
+  },
 
-    return this.props.options;
+  _getOptionsForTypeaheadValue: function (category) {
+    var options = this._getOptionsByCategory(category);
+    if (options == null) return [];
+    else return map(options(), "value");
   },
 
   _getHeader: function () {
@@ -127,9 +150,9 @@ var TypeaheadTokenizer = createReactClass({
     return this.props.options;
   },
 
-  _getCategoryType: function () {
+  _getCategoryType: function (category) {
     for (var i = 0; i < this.props.options.length; i++) {
-      if (this.props.options[i].category == this.state.category) {
+      if (this.props.options[i].category == category) {
         return this.props.options[i].type;
       }
     }
@@ -138,6 +161,14 @@ var TypeaheadTokenizer = createReactClass({
   _getCategoryOptions: function () {
     for (var i = 0; i < this.props.options.length; i++) {
       if (this.props.options[i].category == this.state.category) {
+        return this.props.options[i].options;
+      }
+    }
+  },
+
+  _getOptionsByCategory: function (category) {
+    for (var i = 0; i < this.props.options.length; i++) {
+      if (this.props.options[i].category == category) {
         return this.props.options[i].options;
       }
     }
@@ -179,7 +210,7 @@ var TypeaheadTokenizer = createReactClass({
 
     this.state.selected.splice(index, 1);
     this.setState({ selected: this.state.selected });
-    this.props.onTokenRemove(this.state.selected);
+    this.props.onChange(this.state.selected);
 
     return;
   },
@@ -191,21 +222,17 @@ var TypeaheadTokenizer = createReactClass({
       return;
     }
 
-    if (this.state.category == value) {
-      this.refs.typeahead.instanceRef.setEntryText("");
-      return;
+    if (value !== "") {
+      value = {
+        category: this.state.category,
+        value: trim(value)
+      };
+
+      this.state.selected.push(value);
+      this.setState({ selected: this.state.selected });
     }
-
-    value = {
-      category: this.state.category,
-      value: value
-    };
-
-    this.state.selected.push(value);
-    this.setState({ selected: this.state.selected });
     this.refs.typeahead.instanceRef.setEntryText("");
-    this.props.onTokenAdd(this.state.selected);
-
+    this.props.onChange(this.state.selected);
     this.setState({ category: "" });
 
     return;
@@ -214,9 +241,10 @@ var TypeaheadTokenizer = createReactClass({
   /***
    * Returns the data type the input should use ("date" or "text")
    */
-  _getInputType: function () {
-    if (this.state.category != "") {
-      return this._getCategoryType();
+  _getInputType: function (selectedCategory) {
+    let category = selectedCategory || this.state.category;
+    if (category != "") {
+      return this._getCategoryType(category);
     } else {
       return "text";
     }
@@ -225,7 +253,16 @@ var TypeaheadTokenizer = createReactClass({
   _getOptionsLabel: function () {
     var currentHeader = this._getHeader();
     var optionsLabel = [];
-    let selectedCategory = map(this.state.selected, "category");
+    let selectedCategory = [];
+    let bypassCategory = map(
+      filter(this.props.options, ["addMultiple", true]),
+      "category"
+    );
+    selectedCategory = this.state.selected
+      .map((item) => {
+        if (!bypassCategory.includes(item.category)) return item.category;
+      })
+      .filter(Boolean);
     if (currentHeader == "Category") {
       for (var i = 0; i < this.props.options.length; i++) {
         selectedCategory.indexOf(this.props.options[i].category) === -1 &&
@@ -237,6 +274,12 @@ var TypeaheadTokenizer = createReactClass({
       else return map(options(), "label");
     }
     return optionsLabel;
+  },
+
+  _getValueOptionsLabel: function (category) {
+    var options = this._getOptionsByCategory(category);
+    if (options == null) return [];
+    else return map(options(), "label");
   },
 
   _getFilterCategoryLabel: function (filterCategory) {
@@ -267,10 +310,17 @@ var TypeaheadTokenizer = createReactClass({
     return selectedValue;
   },
 
-  _onClearAll: function () {
-    this.setState({ selected: [], category: "" }, () => {
-      this.props.onTokenRemove(this.state.selected);
+  setFiltersValue: function (selected) {
+    this.setState({
+      selected
     });
+    this.props.onChange(selected);
+  },
+
+  _onClearAll: function () {
+    let selected = [];
+    this.setState({ selected, category: "" });
+    this.props.onChange(selected);
   },
 
   _getClearAllButton: function () {
@@ -308,7 +358,7 @@ var TypeaheadTokenizer = createReactClass({
           {this._renderTokens()}
 
           <div className="filter-input-group">
-            <div className="filter-category text-uppercase mr-2">
+            <div className="filter-category text-uppercase">
               {this._getFilterCategoryLabel(this.state.category)}
             </div>
 
@@ -330,6 +380,7 @@ var TypeaheadTokenizer = createReactClass({
               defaultValue={this.props.defaultValue}
               onOptionSelected={this._addTokenForValue}
               onKeyDown={this._onKeyDown}
+              allSelected={this.state.selected}
             />
           </div>
         </div>

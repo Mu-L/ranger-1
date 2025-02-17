@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import React, { forwardRef, useEffect, useRef } from "react";
+import React, { forwardRef, useEffect, useState, useRef } from "react";
 import {
   useTable,
   usePagination,
@@ -28,7 +28,7 @@ import {
 } from "react-table";
 import { Table, ButtonGroup } from "react-bootstrap";
 import DropdownButton from "react-bootstrap/DropdownButton";
-import { isEmpty } from "lodash";
+import { groupBy, isEmpty, uniqBy } from "lodash";
 
 const IndeterminateCheckbox = forwardRef(
   ({ indeterminate, chkType, ...rest }, ref) => {
@@ -59,6 +59,7 @@ function XATableLayout({
   loading,
   data,
   fetchData,
+  showPagination = true,
   pageCount: controlledPageCount,
   currentpageIndex,
   currentpageSize,
@@ -73,18 +74,22 @@ function XATableLayout({
 }) {
   const getLocalStorageVal = () => {
     let localStorageVal = [];
+
     if (localStorage.getItem("showHideTableCol") != null) {
-      localStorageVal = JSON.parse(
-        localStorage.getItem("showHideTableCol")
-      ).bigData;
+      localStorageVal =
+        !isEmpty(localStorage.getItem("showHideTableCol")) &&
+        JSON.parse(localStorage.getItem("showHideTableCol"));
     }
-    let filterColVal = !isEmpty(localStorageVal)
-      ? localStorageVal
-          .filter((obj) => obj.renderable == false)
-          .map((r) => r.name)
+
+    let filterColVal = !isEmpty(localStorageVal[columnHide?.tableName])
+      ? localStorageVal[columnHide?.tableName]
+          ?.filter((obj) => obj.renderable == false)
+          ?.map((r) => r.name)
       : [];
+
     return filterColVal;
   };
+
   const {
     getTableProps,
     getTableBodyProps,
@@ -98,7 +103,6 @@ function XATableLayout({
     setPageSize,
     canPreviousPage,
     allColumns,
-    getToggleHideAllColumnsProps,
     canNextPage,
     pageOptions,
     state: { pageIndex, pageSize, sortBy },
@@ -162,6 +166,9 @@ function XATableLayout({
     }
   );
 
+  const currentPageValRef = useRef();
+  const [currentPageVal, setCurrentPageVal] = useState("");
+
   useEffect(() => {
     fetchData({ pageIndex, pageSize, gotoPage, sortBy });
   }, [fetchData, pageIndex, pageSize, gotoPage, !clientSideSorting && sortBy]);
@@ -172,50 +179,143 @@ function XATableLayout({
     }
   }, [selectedFlatRows]);
 
+  useEffect(() => {
+    setCurrentPageVal(pageIndex + 1);
+  }, [pageIndex]);
+
+  const validatePageNumber = (pageVal, pageOptions) => {
+    let error = "";
+    if (!Number.isInteger(Number(currentPageVal))) {
+      error = `Please enter a valid value.`;
+    } else if (pageVal < 1) {
+      error = "Value must be greater than or equal to 1";
+    } else if (pageVal > pageOptions.length) {
+      error = `Value must be less than or equal to ${pageOptions.length}`;
+    }
+    return (
+      <span className="text-danger position-absolute text-start pagination-error-field">
+        {error}
+      </span>
+    );
+  };
+
+  /* For Column Visibility */
+  const groupedColumnsData = groupBy(allColumns, "parent[id]");
+  delete groupedColumnsData.undefined;
+  const allColumnsData = allColumns.map((column) => {
+    const columnName = column?.parent
+      ? `Group(${column?.parent.id})`
+      : `Non-Group(${column?.id})`;
+    return {
+      columnName,
+      columnData: groupedColumnsData[column.parent?.id] || column
+    };
+  });
+
+  let filterAllColumns = uniqBy(allColumnsData, function (column) {
+    return column.columnName;
+  });
+
   let columnShowHide = [];
+
   return (
     // apply the table props
     <>
-      {columnHide && (
-        <div className="text-right mb-2 mt-n5">
+      {columnHide?.isVisible && (
+        <div className="position-absolute top-0 end-0">
           <DropdownButton
-            className="p-0"
-            menuAlign="right"
+            className="p-0 column-dropdown"
+            align="end"
             as={ButtonGroup}
             size="sm"
             id="dropdown-variants-info"
             variant="info"
             title="Columns"
           >
-            <ul className="list-group">
-              {allColumns.map((column, index) => {
-                columnShowHide.push({
-                  name: column.id,
-                  renderable: column.isVisible
-                });
+            <div className="column-dropdown-maxheight">
+              <ul className="list-group fnt-14">
+                {filterAllColumns.map((column, index) => {
+                  if (
+                    column.columnName == `Non-Group(${column.columnData.id})`
+                  ) {
+                    columnShowHide.push({
+                      name: column.columnData.id,
+                      renderable: column.columnData.isVisible
+                    });
+                  } else {
+                    column.columnData.forEach((col) => {
+                      columnShowHide.push({
+                        name: col.id,
+                        renderable: col.isVisible
+                      });
+                    });
+                  }
 
-                localStorage.setItem(
-                  "showHideTableCol",
-                  JSON.stringify({ bigData: columnShowHide })
-                );
-                return (
-                  <li
-                    className="column-list text-truncate"
-                    key={`col-${index}`}
-                  >
-                    <label>
-                      <input
-                        className="mr-1"
-                        type="checkbox"
-                        {...column.getToggleHiddenProps()}
-                      />
+                  let localStorageColumnData =
+                    JSON.parse(localStorage.getItem("showHideTableCol")) || {};
 
-                      {column.Header}
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
+                  let columnData = {
+                    ...localStorageColumnData,
+                    [columnHide.tableName]: columnShowHide
+                  };
+
+                  localStorage.setItem(
+                    "showHideTableCol",
+                    JSON.stringify(columnData)
+                  );
+
+                  return column.columnName ==
+                    `Non-Group(${column.columnData.id})` ? (
+                    <li
+                      className="column-list text-truncate"
+                      key={`col-${index}`}
+                    >
+                      <label
+                        title={column.columnData.Header}
+                        className="d-flex align-items-center"
+                      >
+                        <input
+                          className="me-1"
+                          type="checkbox"
+                          {...column.columnData.getToggleHiddenProps()}
+                        />
+                        {column.columnData.Header}
+                      </label>
+                    </li>
+                  ) : (
+                    <li
+                      className="column-list text-truncate"
+                      key={`col-${index}`}
+                    >
+                      {column.columnName !== undefined && (
+                        <div className="font-weight-bold text-secondary mb-2 fnt-14">
+                          {column.columnName !== undefined &&
+                            column?.columnData[0]?.parent?.id}
+                        </div>
+                      )}
+                      {column.columnData.map((columns) => (
+                        <ul key={columns.id} className="p-0">
+                          <li className=" list-unstyled">
+                            {" "}
+                            <label
+                              title={columns.Header}
+                              className="d-flex align-items-center"
+                            >
+                              <input
+                                className="me-1"
+                                type="checkbox"
+                                {...columns.getToggleHiddenProps()}
+                              />
+                              {columns.Header}
+                            </label>
+                          </li>
+                        </ul>
+                      ))}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </DropdownButton>
         </div>
       )}
@@ -288,7 +388,7 @@ function XATableLayout({
                       <td colSpan={columns.length + 1}>
                         <center>
                           <span className="text-muted" data-cy="tbleDataMsg">
-                            "No data to show!!"
+                            &quot;No data to show!!&quot;
                           </span>
                         </center>
                       </td>
@@ -296,7 +396,7 @@ function XATableLayout({
                   </tbody>
                 ) : (
                   <tbody {...getTableBodyProps()}>
-                    {rows.map((row, index) => {
+                    {rows.map((row) => {
                       prepareRow(row);
                       return (
                         <tr
@@ -318,77 +418,117 @@ function XATableLayout({
               </>
             </Table>
           </div>
-          {totalCount > 25 && (
+          {showPagination && totalCount > 25 && (
             <div className="row mt-2">
               <div className="col-md-12 m-b-sm">
-                <div className="text-center">
-                  <button
-                    title="First"
-                    onClick={() => gotoPage(0)}
-                    disabled={!canPreviousPage}
-                    className="pagination-btn-first btn btn-outline-dark btn-sm mr-1"
-                  >
-                    {"<<"}
-                  </button>
-                  <button
-                    title="Previous"
-                    onClick={() => previousPage()}
-                    disabled={!canPreviousPage}
-                    className="pagination-btn-previous btn btn-outline-dark btn-sm"
-                  >
-                    {"< "}{" "}
-                  </button>
-                  <span className="mr-1">
-                    <span className="mr-1"> </span>
-                    Page{" "}
-                    <strong>
-                      {pageIndex + 1} of {pageOptions.length}
-                    </strong>{" "}
-                  </span>
-                  <span className="mr-1"> | </span>
-                  Go to page:{" "}
-                  <input
-                    className="pagination-input"
-                    type="number"
-                    defaultValue={pageIndex + 1}
-                    onChange={(e) => {
-                      const page = e.target.value
-                        ? Number(e.target.value) - 1
-                        : 0;
-                      gotoPage(page);
-                    }}
-                  />
-                  <span className="mr-1"> </span>
+                <div className="text-center d-flex justify-content-end align-items-center pb-2">
                   <span>
+                    Records per page
                     <select
-                      className="select-pagesize"
+                      className="select-pagesize ms-2"
                       value={pageSize}
                       onChange={(e) => {
                         gotoPage(0);
                         setPageSize(Number(e.target.value));
+                        setCurrentPageVal(1);
+                        currentPageValRef.current.value = 1;
                       }}
                     >
                       {[25, 50, 75, 100].map((pageSize) => (
                         <option key={pageSize} value={pageSize}>
-                          Show {pageSize}
+                          {pageSize}
                         </option>
                       ))}
                     </select>
                   </span>
-                  <span className="mr-1"> </span>
                   <button
-                    onClick={() => nextPage()}
-                    className="pagination-btn-previous mr-1 btn btn-outline-dark btn-sm lh-1"
-                    disabled={!canNextPage}
+                    title="First"
+                    onClick={() => {
+                      gotoPage(0);
+                      currentPageValRef.current.value = 1;
+                      setCurrentPageVal(1);
+                    }}
+                    disabled={!canPreviousPage}
+                    className="pagination-btn-last btn btn-outline-dark btn-sm me-1"
                   >
-                    {">"}
+                    <i
+                      className="fa fa-angle-double-left"
+                      aria-hidden="true"
+                    ></i>
                   </button>
                   <button
-                    onClick={() => gotoPage(pageCount - 1)}
+                    title="Previous"
+                    onClick={() => {
+                      currentPageValRef.current.value = pageIndex;
+                      previousPage();
+                      setCurrentPageVal(pageIndex);
+                    }}
+                    disabled={!canPreviousPage}
+                    className="pagination-btn-previous btn btn-outline-dark btn-sm me-2"
+                  >
+                    <i className="fa fa-angle-left" aria-hidden="true"></i>
+                  </button>
+                  Page{" "}
+                  <div className="position-relative ms-1">
+                    <input
+                      className="pagination-input"
+                      type="number"
+                      ref={currentPageValRef}
+                      key={pageIndex + 1}
+                      defaultValue={pageIndex + 1}
+                      onChange={(e) => {
+                        setTimeout(() => {
+                          let currPage = e.target.value;
+                          setCurrentPageVal(currPage);
+                          if (
+                            currPage < 1 ||
+                            currPage > pageOptions.length ||
+                            !Number.isInteger(Number(currPage))
+                          ) {
+                            return currPage;
+                          } else {
+                            const page = currPage ? Number(currPage) - 1 : 0;
+                            gotoPage(page);
+                          }
+                        }, 2000);
+                      }}
+                    />
+                    {currentPageVal !== "" &&
+                      (currentPageVal < 1 ||
+                        currentPageVal > pageOptions.length ||
+                        !Number.isInteger(Number(currentPageVal))) &&
+                      validatePageNumber(currentPageVal, pageOptions)}
+                    <span className="me-1"> </span>
+                  </div>
+                  <span className="me-1">
+                    <span className="me-1"> </span>
+                    of {pageOptions.length}
+                  </span>
+                  <span className="me-1"> </span>
+                  <button
+                    onClick={() => {
+                      currentPageValRef.current.value = pageIndex + 2;
+                      nextPage();
+                      setCurrentPageVal(pageIndex + 2);
+                    }}
+                    className="pagination-btn-previous me-1 btn btn-outline-dark btn-sm lh-1"
+                    disabled={!canNextPage}
+                  >
+                    <i className="fa fa-angle-right" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    onClick={() => {
+                      gotoPage(pageCount - 1);
+                      currentPageValRef.current.value = pageCount;
+                      setCurrentPageVal(pageCount);
+                    }}
                     className="pagination-btn-last btn btn-outline btn-sm"
                     disabled={!canNextPage}
                   >
-                    {">>"}
+                    <i
+                      className="fa fa-angle-double-right"
+                      aria-hidden="true"
+                    ></i>
                   </button>
                 </div>
               </div>

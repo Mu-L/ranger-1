@@ -21,74 +21,114 @@ import React, { Suspense, lazy, Component } from "react";
 import { Route, Routes, HashRouter } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import axios from "axios";
-
+import { hasAccessToTab, isUser } from "./utils/XAUtils";
 import ErrorBoundary from "Views/ErrorBoundary";
 import ErrorPage from "./views/ErrorPage";
 import { CommonScrollButton, Loader } from "../src/components/CommonComponents";
 import history from "Utils/history";
-import { getUserProfile, setUserProfile } from "Utils/appState";
+import { setUserProfile, setServiceDef } from "Utils/appState";
 import LayoutComp from "Views/Layout";
+import { filter, sortBy, has } from "lodash";
+import { fetchApi, fetchCSRFConf } from "Utils/fetchAPI";
+
 const HomeComp = lazy(() => import("Views/Home"));
 const ServiceFormComp = lazy(() => import("Views/ServiceManager/ServiceForm"));
 const UserProfileComp = lazy(() => import("Views/UserProfile"));
 const ZoneListingComp = lazy(() => import("Views/SecurityZone/ZoneListing"));
-const SecurityZoneFormComp = lazy(() =>
-  import("Views/SecurityZone/SecurityZoneForm")
+const SecurityZoneFormComp = lazy(
+  () => import("Views/SecurityZone/SecurityZoneForm")
 );
-const UserGroupRoleListing = lazy(() =>
-  import("Views/UserGroupRoleListing/UserGroupRoleListing")
+const UserGroupRoleListing = lazy(
+  () => import("Views/UserGroupRoleListing/UserGroupRoleListing")
 );
-const UserListingComp = lazy(() =>
-  import("Views/UserGroupRoleListing/users_details/UserListing")
+const UserListingComp = lazy(
+  () => import("Views/UserGroupRoleListing/users_details/UserListing")
 );
-const GroupListingComp = lazy(() =>
-  import("Views/UserGroupRoleListing/groups_details/GroupListing")
+const GroupListingComp = lazy(
+  () => import("Views/UserGroupRoleListing/groups_details/GroupListing")
 );
-const RoleListingComp = lazy(() =>
-  import("Views/UserGroupRoleListing/role_details/RoleListing")
+const RoleListingComp = lazy(
+  () => import("Views/UserGroupRoleListing/role_details/RoleListing")
 );
-const UserForm = lazy(() =>
-  import("Views/UserGroupRoleListing/users_details/AddUserView")
+const UserForm = lazy(
+  () => import("Views/UserGroupRoleListing/users_details/AddUserView")
 );
-const EditUserView = lazy(() =>
-  import("Views/UserGroupRoleListing/users_details/EditUserView")
+const EditUserView = lazy(
+  () => import("Views/UserGroupRoleListing/users_details/EditUserView")
 );
-const GroupForm = lazy(() =>
-  import("Views/UserGroupRoleListing/groups_details/GroupForm")
+const GroupForm = lazy(
+  () => import("Views/UserGroupRoleListing/groups_details/GroupForm")
 );
-const RoleForm = lazy(() =>
-  import("Views/UserGroupRoleListing/role_details/RoleForm")
+const RoleForm = lazy(
+  () => import("Views/UserGroupRoleListing/role_details/RoleForm")
 );
 const Permissions = lazy(() => import("Views/PermissionsModule/Permissions"));
-const EditPermissionComp = lazy(() =>
-  import("Views/PermissionsModule/EditPermission")
+const EditPermissionComp = lazy(
+  () => import("Views/PermissionsModule/EditPermission")
 );
 const AuditLayout = lazy(() => import("Views/AuditEvent/AuditLayout"));
 const AccessLogs = lazy(() => import("Views/AuditEvent/AccessLogs"));
 const AdminLogs = lazy(() => import("Views/AuditEvent/AdminLogs"));
-const LoginSessionsLogs = lazy(() =>
-  import("Views/AuditEvent/LoginSessionsLogs")
+const LoginSessionsLogs = lazy(
+  () => import("Views/AuditEvent/LoginSessionsLogs")
 );
 const PluginsLog = lazy(() => import("Views/AuditEvent/PluginsLog"));
-const PluginStatusLogs = lazy(() =>
-  import("Views/AuditEvent/PluginStatusLogs")
+const PluginStatusLogs = lazy(
+  () => import("Views/AuditEvent/PluginStatusLogs")
 );
 const UserSyncLogs = lazy(() => import("Views/AuditEvent/UserSync"));
 
-const PolicyListingTabView = lazy(() =>
-  import("Views/PolicyListing/PolicyListingTabView")
+const PolicyListingTabView = lazy(
+  () => import("Views/PolicyListing/PolicyListingTabView")
 );
-const AddUpdatePolicyForm = lazy(() =>
-  import("Views/PolicyListing/AddUpdatePolicyForm")
+const AddUpdatePolicyForm = lazy(
+  () => import("Views/PolicyListing/AddUpdatePolicyForm")
 );
 const EncryptionComp = lazy(() => import("Views/Encryption/KeyManager"));
 const KeyCreateComp = lazy(() => import("Views/Encryption/KeyCreate"));
-const AccesLogDetailComp = lazy(() =>
-  import("Views/AuditEvent/AccessLogDetail")
+const AccesLogDetailComp = lazy(
+  () => import("Views/AuditEvent/AccessLogDetail")
 );
-const UserAccessLayoutComp = lazy(() =>
-  import("Views/Reports/UserAccessLayout")
+const UserAccessLayoutComp = lazy(
+  () => import("Views/Reports/UserAccessLayout")
 );
+const MyDatasetListingComp = lazy(
+  () => import("Views/GovernedData/Dataset/MyDatasetListing")
+);
+const CreateDatasetComp = lazy(
+  () => import("Views/GovernedData/Dataset/AddDatasetView")
+);
+const DatasetDetailLayoutComp = lazy(
+  () => import("Views/GovernedData/Dataset/DatasetDetailLayout")
+);
+const DatasetDetailFullViewComp = lazy(
+  () => import("Views/GovernedData/Dataset/DatasetDetailFullView")
+);
+const AccessGrantFormComp = lazy(
+  () => import("Views/GovernedData/Dataset/AccessGrantForm")
+);
+const MyDatashareListingComp = lazy(
+  () => import("Views/GovernedData/Datashare/MyDatashareListing")
+);
+const CreateDatashareComp = lazy(
+  () => import("Views/GovernedData/Datashare/AddDatashareView")
+);
+const DatashareDetailLayoutComp = lazy(
+  () => import("Views/GovernedData/Datashare/DatashareDetailLayout")
+);
+const DatashareDetailFullView = lazy(
+  () => import("Views/GovernedData/Datashare/DatashareDetailFullView")
+);
+const DatashareAddSharedResourceComp = lazy(
+  () => import("Views/GovernedData/Datashare/AddSharedResourceComp")
+);
+const GDSRequestListingComp = lazy(
+  () => import("Views/GovernedData/Request/RequestListing")
+);
+const GDSRequestDetailComp = lazy(
+  () => import("Views/GovernedData/Request/RequestDetailView")
+);
+
 export default class App extends Component {
   constructor(props) {
     super(props);
@@ -106,14 +146,7 @@ export default class App extends Component {
         window.location.hostname +
         (window.location.port ? ":" + window.location.port : "");
     }
-    // Proxy URL for Ranger UI doesn't work without trailing slash so add slash
-    // let pathName = /\/[\w-]+.(jsp|html)/;
-    // if (
-    //   !pathName.test(window.location.pathname) &&
-    //   window.location.pathname.slice(-1) !== "/"
-    // ) {
-    //   window.location.pathname += "/";
-    // }
+
     let baseUrl =
       window.location.origin +
       window.location.pathname.substr(
@@ -132,12 +165,17 @@ export default class App extends Component {
   }
 
   fetchUserProfile = async () => {
+    let getServiceDefData = [];
+    let resourceServiceDef = [];
+    let tagServiceDef = [];
+    let gdsServiceDef = {};
+
     try {
-      const { fetchApi, fetchCSRFConf } = await import("Utils/fetchAPI");
+      fetchCSRFConf();
       const profResp = await fetchApi({
         url: "users/profile"
       });
-      await fetchCSRFConf();
+
       setUserProfile(profResp.data);
     } catch (error) {
       setUserProfile(null);
@@ -145,14 +183,59 @@ export default class App extends Component {
         `Error occurred while fetching profile or CSRF headers! ${error}`
       );
     }
+
+    let serviceDefUrl = hasAccessToTab("Resource Based Policies")
+      ? "plugins/definitions"
+      : hasAccessToTab("Tag Based Policies") && isUser()
+        ? "plugins/definitions/name/tag"
+        : "plugins/definitions";
+
+    try {
+      getServiceDefData = await fetchApi({
+        url: serviceDefUrl
+      });
+
+      if (has(getServiceDefData.data, "serviceDefs")) {
+        getServiceDefData = getServiceDefData.data.serviceDefs;
+      } else {
+        getServiceDefData = [getServiceDefData.data];
+      }
+
+      tagServiceDef = sortBy(filter(getServiceDefData, ["name", "tag"]), "id");
+
+      resourceServiceDef = sortBy(
+        filter(getServiceDefData, (serviceDef) => serviceDef.name !== "tag"),
+        "id"
+      );
+    } catch (error) {
+      console.error(
+        `Error occurred while fetching serviceDef details ! ${error}`
+      );
+    }
+
+    try {
+      let resp = await fetchApi({
+        url: `plugins/definitions/name/gds`
+      });
+      gdsServiceDef = resp.data;
+    } catch (error) {
+      console.error(
+        `Error occurred while fetching GDS Service Definition or CSRF headers! ${error}`
+      );
+    }
+
+    setServiceDef(
+      resourceServiceDef,
+      tagServiceDef,
+      gdsServiceDef,
+      getServiceDefData
+    );
     this.setState({
       loader: false
     });
   };
 
   render() {
-    const userProfile = getUserProfile();
-    const defaultProps = { userProfile };
     return (
       <ErrorBoundary history={history}>
         <Suspense fallback={<Loader />}>
@@ -291,8 +374,78 @@ export default class App extends Component {
                     path="/knoxSSOWarning"
                     element={<ErrorPage errorCode="checkSSOTrue" />}
                   />
+                  {/*DATA NOT FOUND PAGE*/}
+                  <Route
+                    path="/dataNotFound"
+                    element={<ErrorPage errorCode="400" />}
+                  />
+                  <Route
+                    path="/pageNotFound"
+                    element={<ErrorPage errorCode="404" />}
+                  />
+                  <Route
+                    path="/forbidden"
+                    element={<ErrorPage errorCode="403" />}
+                  />
+                  <Route path="/locallogin" element={<Loader />} />
                   {/* NOT FOUND ROUTE */}
                   <Route path="*" />
+                  {/* GDS */}
+                  <Route path="/gds">
+                    <Route
+                      path="mydatasetlisting"
+                      element={<MyDatasetListingComp />}
+                    />
+                    <Route path="create" element={<CreateDatasetComp />} />
+                    <Route
+                      path="dataset/:datasetId/detail"
+                      element={<DatasetDetailLayoutComp />}
+                    />
+                    <Route
+                      path="dataset/:datasetId/accessGrant"
+                      element={<AccessGrantFormComp />}
+                    />
+                    <Route
+                      path="mydatasharelisting"
+                      element={<MyDatashareListingComp />}
+                    />
+                    <Route
+                      path="dataset/:datasetId/fullview"
+                      element={<DatasetDetailFullViewComp />}
+                    />
+                    <Route
+                      path="datashare/create"
+                      element={<CreateDatashareComp />}
+                    />
+                    <Route
+                      path="datashare/:datashareId/detail"
+                      element={<DatashareDetailLayoutComp />}
+                    />
+                    <Route
+                      path="datashare/:datashareId/fullview"
+                      element={<DatashareDetailFullView />}
+                    />
+                    <Route
+                      path="datashare/resource/:datashareId"
+                      element={<DatashareAddSharedResourceComp />}
+                    />
+                    <Route
+                      path="request/list"
+                      element={<GDSRequestListingComp />}
+                    />
+                    <Route
+                      path="request/detail/:requestId"
+                      element={<GDSRequestDetailComp />}
+                    />
+                    <Route
+                      path="datasetlisting"
+                      element={<MyDatasetListingComp />}
+                    />
+                    <Route
+                      path="datasharelisting"
+                      element={<MyDatashareListingComp />}
+                    />
+                  </Route>
                 </Route>
               </Routes>
             </HashRouter>

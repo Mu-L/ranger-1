@@ -1,9 +1,10 @@
-version: '3'
 services:
   ranger-build:
     build:
       context: .
       dockerfile: Dockerfile.ranger-build
+      args:
+        - RANGER_BUILD_JAVA_VERSION=${RANGER_BUILD_JAVA_VERSION}
     image: ranger-build
     container_name: ranger-build
     hostname: ranger-build.example.com
@@ -20,6 +21,7 @@ services:
     environment:
       - BRANCH
       - BUILD_HOST_SRC
+      - BUILD_OPTS
       - PROFILE
       - GIT_URL
       - RANGER_VERSION

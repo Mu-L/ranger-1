@@ -17,13 +17,12 @@
  * under the License.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Accordion,
   Badge,
   Button,
-  Card,
   Col,
   Modal,
   Row,
@@ -34,6 +33,7 @@ import { MoreLess } from "Components/CommonComponents";
 import XATableLayout from "Components/XATableLayout";
 import { fetchApi } from "Utils/fetchAPI";
 import { Loader } from "../../components/CommonComponents";
+import { isAuditor, isKMSAuditor } from "../../utils/XAUtils";
 
 function SearchPolicyTable(props) {
   const [searchPoliciesData, setSearchPolicies] = useState([]);
@@ -50,7 +50,6 @@ function SearchPolicyTable(props) {
   };
 
   const hidePolicyConditionModal = () => setShowModal(false);
-
   const fetchSearchPolicies = useCallback(
     async ({ pageSize, pageIndex }) => {
       setLoader(true);
@@ -96,16 +95,26 @@ function SearchPolicyTable(props) {
         Header: "Policy ID",
         accessor: "id",
         Cell: (rawValue) => {
-          return (
-            <Link
-              title="Edit"
-              to={`/service/${getServiceId(
-                rawValue.row.original.service
-              )}/policies/${rawValue.value}/edit`}
-            >
-              {rawValue.value}
-            </Link>
-          );
+          if (isAuditor() || isKMSAuditor()) {
+            return (
+              <div className="position-relative text-center">
+                {rawValue.value}
+              </div>
+            );
+          } else {
+            return (
+              <div className="position-relative text-center">
+                <Link
+                  title="Edit"
+                  to={`/service/${getServiceId(
+                    rawValue.row.original.service
+                  )}/policies/${rawValue.value}/edit`}
+                >
+                  {rawValue.value}
+                </Link>
+              </div>
+            );
+          }
         },
         width: 65
       },
@@ -162,19 +171,19 @@ function SearchPolicyTable(props) {
           if (rawValue.value == 1) {
             return (
               <h6 className="text-center">
-                <Badge variant="primary">Masking</Badge>
+                <Badge bg="primary">Masking</Badge>
               </h6>
             );
           } else if (rawValue.value == 2) {
             return (
               <h6 className="text-center">
-                <Badge variant="primary">Row Level Filter</Badge>
+                <Badge bg="primary">Row Level Filter</Badge>
               </h6>
             );
           } else
             return (
               <h6 className="text-center">
-                <Badge variant="primary">Access</Badge>
+                <Badge bg="primary">Access</Badge>
               </h6>
             );
         }
@@ -186,13 +195,13 @@ function SearchPolicyTable(props) {
           if (rawValue.value)
             return (
               <h6 className="text-center">
-                <Badge variant="success">Enabled</Badge>
+                <Badge bg="success">Enabled</Badge>
               </h6>
             );
           else
             return (
               <h6 className="text-center">
-                <Badge variant="danger">Disabled</Badge>
+                <Badge bg="danger">Disabled</Badge>
               </h6>
             );
         }
@@ -202,7 +211,9 @@ function SearchPolicyTable(props) {
         accessor: "zoneName",
         Cell: (rawValue) => {
           return !isEmpty(rawValue.value) ? (
-            <Badge variant="dark text-truncate mw-100">{rawValue.value}</Badge>
+            <Badge bg="dark" className="text-truncate mw-100">
+              {rawValue.value}
+            </Badge>
           ) : (
             <div className="text-center">--</div>
           );
@@ -238,47 +249,42 @@ function SearchPolicyTable(props) {
     <Row>
       <Col sm={12} className="mt-3">
         <Accordion defaultActiveKey="0">
-          <Card>
-            <Accordion.Toggle
-              className="border-top-0 border-right-0 border-right-0"
-              as={Card.Header}
-              eventKey="0"
-              data-js="hdfsHeader"
-              data-cy="hdfsHeader"
-            >
+          <Accordion.Item eventKey="0">
+            <Accordion.Header data-js="hdfsHeader" data-cy="hdfsHeader">
               <div className="clearfix">
-                <span className="bold float-left text-uppercase">
+                <span className="bold float-start text-uppercase">
                   {props.serviceDef.name}
                 </span>
-                <span className="float-right"></span>
+                <span className="float-end"></span>
               </div>
-            </Accordion.Toggle>
-            <Accordion.Collapse eventKey="0">
+            </Accordion.Header>
+            <Accordion.Body>
               {props.contentLoader ? (
                 <Loader />
               ) : (
-                <Card.Body>
-                  <XATableLayout
-                    columnHide={false}
-                    loading={loader}
-                    data={searchPoliciesData}
-                    columns={columns}
-                    fetchData={fetchSearchPolicies}
-                    pagination
-                    pageCount={pageCount}
-                    totalCount={totalCount}
-                  />
-                </Card.Body>
+                <XATableLayout
+                  columnHide={false}
+                  loading={loader}
+                  data={searchPoliciesData}
+                  columns={columns}
+                  fetchData={fetchSearchPolicies}
+                  pagination
+                  pageCount={pageCount}
+                  totalCount={totalCount}
+                />
               )}
-            </Accordion.Collapse>
-          </Card>
+            </Accordion.Body>
+          </Accordion.Item>
         </Accordion>
         <Modal show={showModal} onHide={hidePolicyConditionModal} size="lg">
           <Modal.Header closeButton>
             <Modal.Title>Policy Condition Details</Modal.Title>
           </Modal.Header>
           <Modal.Body>
-            <PolicyConditionData policyData={policyData} />
+            <PolicyConditionData
+              policyData={policyData}
+              serviceDef={props.serviceDef}
+            />
           </Modal.Body>
         </Modal>
       </Col>
@@ -291,9 +297,11 @@ export default SearchPolicyTable;
 function PolicyConditionData(props) {
   const getPolicyData = (policyItem) => {
     let tableRow = [];
+    let access = [];
 
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
+        access = items.accesses?.map((obj) => obj.type);
         return (
           <tr key={index}>
             <td>
@@ -317,16 +325,29 @@ function PolicyConditionData(props) {
                 <div className="text-center">--</div>
               )}
             </td>
+            {!isEmpty(props?.serviceDef?.policyConditions) && (
+              <td className="text-center">
+                {!isEmpty(items.conditions)
+                  ? items.conditions.map((obj, index) => {
+                      return (
+                        <h6 className="d-inline me-1" key={index}>
+                          <Badge
+                            bg="info"
+                            className="d-inline me-1"
+                            key={obj.values}
+                          >{`${obj.type}: ${obj.values.join(", ")}`}</Badge>
+                        </h6>
+                      );
+                    })
+                  : "--"}
+              </td>
+            )}
             <td>
-              {!isEmpty(items.accesses)
-                ? items.accesses?.map((obj) => (
-                    <h6 className="d-inline mr-1">
-                      <Badge variant="info" className="mr-1" key={obj.type}>
-                        {obj.type}
-                      </Badge>
-                    </h6>
-                  ))
-                : "--"}
+              {!isEmpty(access) ? (
+                <MoreLess data={access} />
+              ) : (
+                <div className="text-center">--</div>
+              )}
             </td>
           </tr>
         );
@@ -334,8 +355,11 @@ function PolicyConditionData(props) {
     } else {
       tableRow.push(
         <tr key="no-data">
-          <td className="text-center" colSpan="4">
-            <span className="text-muted">"No data to show!!"</span>
+          <td
+            className="text-center"
+            colSpan={!isEmpty(props?.serviceDef?.policyConditions) ? "5" : "4"}
+          >
+            <span className="text-muted">&quot;No data to show!!&quot;</span>
           </td>
         </tr>
       );
@@ -345,9 +369,10 @@ function PolicyConditionData(props) {
 
   const getMaskingPolicyData = (policyItem) => {
     let tableRow = [];
-
+    let access = [];
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
+        access = items.accesses?.map((obj) => obj.type);
         return (
           <tr key={index}>
             <td>
@@ -371,21 +396,34 @@ function PolicyConditionData(props) {
                 <div className="text-center">--</div>
               )}
             </td>
+            {!isEmpty(props?.serviceDef?.policyConditions) && (
+              <td className="text-center">
+                {!isEmpty(items.conditions)
+                  ? items.conditions.map((obj, index) => {
+                      return (
+                        <h6 className="d-inline me-1" key={index}>
+                          <Badge
+                            bg="info"
+                            className="d-inline me-1"
+                            key={obj.values}
+                          >{`${obj.type}: ${obj.values.join(", ")}`}</Badge>
+                        </h6>
+                      );
+                    })
+                  : "--"}
+              </td>
+            )}
             <td>
-              {!isEmpty(items.accesses)
-                ? items?.accesses?.map((obj) => (
-                    <h6 className="d-inline">
-                      <Badge variant="info" className="mr-1" key={obj.type}>
-                        {obj.type}
-                      </Badge>
-                    </h6>
-                  ))
-                : "--"}
+              {!isEmpty(access) ? (
+                <MoreLess data={access} />
+              ) : (
+                <div className="text-center">--</div>
+              )}
             </td>
             <td>
               {!isEmpty(items.dataMaskInfo) ? (
                 <h6 className="d-inline">
-                  <Badge variant="info" className="mr-1">
+                  <Badge bg="info" className="me-1">
                     {items.dataMaskInfo["dataMaskType"]}
                   </Badge>
                 </h6>
@@ -399,8 +437,11 @@ function PolicyConditionData(props) {
     } else {
       tableRow.push(
         <tr key="no-data">
-          <td className="text-center" colSpan="4">
-            <span className="text-muted">"No data to show!!"</span>
+          <td
+            className="text-center"
+            colSpan={!isEmpty(props?.serviceDef?.policyConditions) ? "5" : "4"}
+          >
+            <span className="text-muted">&quot;No data to show!!&quot;</span>
           </td>
         </tr>
       );
@@ -410,9 +451,10 @@ function PolicyConditionData(props) {
 
   const getRowLevelPolicyData = (policyItem) => {
     let tableRow = [];
-
+    let access = [];
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
+        access = items.accesses?.map((obj) => obj.type);
         return (
           <tr key={index}>
             <td>
@@ -437,20 +479,16 @@ function PolicyConditionData(props) {
               )}
             </td>
             <td>
-              {!isEmpty(items.accesses)
-                ? items?.accesses?.map((obj) => (
-                    <h6 className="d-inline mr-1">
-                      <Badge variant="info" className="mr-1" key={obj.type}>
-                        {obj.type}
-                      </Badge>
-                    </h6>
-                  ))
-                : "--"}
+              {!isEmpty(access) ? (
+                <MoreLess data={access} />
+              ) : (
+                <div className="text-center">--</div>
+              )}
             </td>
             <td>
               {!isEmpty(items.rowFilterInfo) ? (
                 <h6 className="d-inline">
-                  <Badge variant="info" className="mr-1">
+                  <Badge bg="info" className="me-1">
                     {items.rowFilterInfo["filterExpr"]}
                   </Badge>
                 </h6>
@@ -465,7 +503,7 @@ function PolicyConditionData(props) {
       tableRow.push(
         <tr key="no-data">
           <td className="text-center" colSpan="4">
-            <span className="text-muted">"No data to show!!"</span>
+            <span className="text-muted">&quot;No data to show!!&quot;</span>
           </td>
         </tr>
       );
@@ -478,117 +516,165 @@ function PolicyConditionData(props) {
       {props.policyData.policyType == 0 && (
         <>
           <p className="form-header">Allow Conditions</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-              </tr>
-            </thead>
-            <tbody>{getPolicyData(props.policyData.policyItems)}</tbody>
-          </Table>
-          <p className="form-header">Allow Exclude</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-              </tr>
-            </thead>
-            <tbody>{getPolicyData(props.policyData.allowExceptions)}</tbody>
-          </Table>
-          <p className="form-header">Deny Conditions</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-              </tr>
-            </thead>
-            <tbody>{getPolicyData(props.policyData.denyPolicyItems)}</tbody>
-          </Table>
-          <p className="form-header">Deny Exclude</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-              </tr>
-            </thead>
-            <tbody>{getPolicyData(props.policyData.denyExceptions)}</tbody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table
+              bordered
+              size="sm"
+              className="mb-3 table-audit-filter-ready-only"
+            >
+              <thead>
+                <tr>
+                  <th>Roles</th>
+                  <th>Groups</th>
+                  <th>Users</th>
+                  {!isEmpty(props?.serviceDef?.policyConditions) && (
+                    <th className="text-center text-nowrap">
+                      Policy Conditions
+                    </th>
+                  )}
+                  <th>Accesses</th>
+                </tr>
+              </thead>
+              <tbody>{getPolicyData(props.policyData.policyItems)}</tbody>
+            </Table>
+          </div>
+          {props.serviceDef?.options?.enableDenyAndExceptionsInPolicies ==
+            "true" && (
+            <>
+              <p className="form-header">Allow Exclude</p>
+              <div className="overflow-x-auto">
+                <Table
+                  bordered
+                  size="sm"
+                  className="mb-3 table-audit-filter-ready-only"
+                >
+                  <thead>
+                    <tr>
+                      <th>Roles</th>
+                      <th>Groups</th>
+                      <th>Users</th>
+                      {!isEmpty(props?.serviceDef?.policyConditions) && (
+                        <th className="text-center text-nowrap">
+                          Policy Conditions
+                        </th>
+                      )}
+                      <th>Accesses</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getPolicyData(props.policyData.allowExceptions)}
+                  </tbody>
+                </Table>
+              </div>
+              <p className="form-header">Deny Conditions</p>
+              <div className="overflow-x-auto">
+                <Table
+                  bordered
+                  size="sm"
+                  className="mb-3 table-audit-filter-ready-only"
+                >
+                  <thead>
+                    <tr>
+                      <th>Roles</th>
+                      <th>Groups</th>
+                      <th>Users</th>
+                      {!isEmpty(props?.serviceDef?.policyConditions) && (
+                        <th className="text-center text-nowrap">
+                          Policy Conditions
+                        </th>
+                      )}
+                      <th>Accesses</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getPolicyData(props.policyData.denyPolicyItems)}
+                  </tbody>
+                </Table>
+              </div>
+              <p className="form-header">Deny Exclude</p>
+              <div className="overflow-x-auto">
+                <Table
+                  bordered
+                  size="sm"
+                  className="mb-3 table-audit-filter-ready-only"
+                >
+                  <thead>
+                    <tr>
+                      <th>Roles</th>
+                      <th>Groups</th>
+                      <th>Users</th>
+                      {!isEmpty(props?.serviceDef?.policyConditions) && (
+                        <th className="text-center text-nowrap">
+                          Policy Conditions
+                        </th>
+                      )}
+                      <th>Accesses</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getPolicyData(props.policyData.denyExceptions)}
+                  </tbody>
+                </Table>
+              </div>
+            </>
+          )}
         </>
       )}
 
       {props.policyData.policyType == 1 && (
         <>
-          <p className="form-header">Masking Conditions</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-                <th>Masking Condition</th>
-              </tr>
-            </thead>
-            <tbody>
-              {getMaskingPolicyData(props.policyData.dataMaskPolicyItems)}
-            </tbody>
-          </Table>
+          <p className="form-header ">Masking Conditions</p>
+          <div className="overflow-x-auto">
+            <Table
+              bordered
+              size="sm"
+              className="mb-3 table-audit-filter-ready-only"
+            >
+              <thead>
+                <tr>
+                  <th>Roles</th>
+                  <th>Groups</th>
+                  <th>Users</th>
+                  {!isEmpty(props?.serviceDef?.policyConditions) && (
+                    <th className="text-center text-nowrap">
+                      Policy Conditions
+                    </th>
+                  )}
+                  <th>Accesses</th>
+                  <th>Masking Condition</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getMaskingPolicyData(props.policyData.dataMaskPolicyItems)}
+              </tbody>
+            </Table>
+          </div>
         </>
       )}
 
       {props.policyData.policyType == 2 && (
         <>
           <p className="form-header">Row Level Conditions</p>
-          <Table
-            bordered
-            size="sm"
-            className="mb-3 table-audit-filter-ready-only"
-          >
-            <thead>
-              <tr>
-                <th>Roles</th>
-                <th>Groups</th>
-                <th>Users</th>
-                <th>Accesses</th>
-                <th>Row Level Filter</th>
-              </tr>
-            </thead>
-            <tbody>
-              {getRowLevelPolicyData(props.policyData.rowFilterPolicyItems)}
-            </tbody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table
+              bordered
+              size="sm"
+              className="mb-3 table-audit-filter-ready-only"
+            >
+              <thead>
+                <tr>
+                  <th>Roles</th>
+                  <th>Groups</th>
+                  <th>Users</th>
+                  <th>Accesses</th>
+                  <th>Row Level Filter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getRowLevelPolicyData(props.policyData.rowFilterPolicyItems)}
+              </tbody>
+            </Table>
+          </div>
         </>
       )}
     </React.Fragment>

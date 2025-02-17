@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import React, { useState, useEffect, useReducer } from "react";
+import React, { useEffect, useReducer } from "react";
 import { Button, Row, Col } from "react-bootstrap";
 import { Form, Field } from "react-final-form";
 import { toast } from "react-toastify";
@@ -77,7 +77,7 @@ const groupFormReducer = (state, action) => {
   }
 };
 
-function GroupForm(props) {
+function GroupForm() {
   const params = useParams();
   const [groupDetails, dispatch] = useReducer(groupFormReducer, initialState);
   const { groupType, groupInfo, loader, preventUnBlock, blockUI } =
@@ -109,13 +109,13 @@ function GroupForm(props) {
     }
     dispatch({
       type: "SET_GROUP_DATA",
-      groupInfo: groupRespData.data,
-      groupType: groupRespData.data.groupType,
+      groupInfo: groupRespData?.data,
+      groupType: groupRespData?.data?.groupType,
       loader: false
     });
   };
 
-  const handleSubmit = async (values, invalid) => {
+  const handleSubmit = async (values) => {
     let formData = {};
     formData.name = values.name;
     formData.description = values.description || "";
@@ -123,17 +123,7 @@ function GroupForm(props) {
       ...groupInfo,
       ...formData
     };
-    let tblpageData = {};
-    if (state && state != null && (!invalid?.getState()?.invalid || !invalid)) {
-      tblpageData = state.tblpageData;
-      if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
-        tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
-      } else {
-        if (tblpageData !== undefined) {
-          tblpageData["totalPage"] = state.tblpageData.totalPage;
-        }
-      }
-    }
+
     dispatch({
       type: "SET_PREVENT_ALERT",
       preventUnBlock: true
@@ -144,7 +134,7 @@ function GroupForm(props) {
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const userEdit = await fetchApi({
+        await fetchApi({
           url: `xusers/secure/groups/${params.groupID}`,
           method: "put",
           data: groupFormData
@@ -169,11 +159,22 @@ function GroupForm(props) {
           type: "SET_BLOCK_UI",
           blockUI: true
         });
-        const userAdd = await fetchApi({
+        await fetchApi({
           url: "xusers/secure/groups",
           method: "post",
           data: formData
         });
+        let tblpageData = {};
+        if (state && state != null) {
+          tblpageData = state.tblpageData;
+          if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
+            tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
+          } else {
+            if (tblpageData !== undefined) {
+              tblpageData["totalPage"] = state.tblpageData.totalPage;
+            }
+          }
+        }
         dispatch({
           type: "SET_BLOCK_UI",
           blockUI: false
@@ -230,11 +231,13 @@ function GroupForm(props) {
 
   return (
     <div>
-      {commonBreadcrumb(
-        ["Groups", params.groupID ? "GroupEdit" : "GroupCreate"],
-        params.groupID
-      )}
-      <h4 className="wrap-header bold">Group Detail</h4>
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">Group Detail</h3>
+        {commonBreadcrumb(
+          ["Groups", params.groupID ? "GroupEdit" : "GroupCreate"],
+          params.groupID
+        )}
+      </div>
       {loader ? (
         <Loader />
       ) : (
@@ -249,7 +252,6 @@ function GroupForm(props) {
             invalid,
             errors,
             values,
-            pristine,
             dirty
           }) => (
             <div className="wrap user-role-grp-form">
@@ -263,11 +265,11 @@ function GroupForm(props) {
                   {({ input, meta }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           Group Name *
                         </label>
                       </Col>
-                      <Col xs={4}>
+                      <Col xs={4} className={"position-relative"}>
                         <input
                           {...input}
                           type="text"
@@ -291,7 +293,7 @@ function GroupForm(props) {
                           }
                           data-cy="name"
                         />
-                        <span className="info-user-role-grp-icon">
+                        <span className="input-box-info-icon">
                           <CustomTooltip
                             placement="right"
                             content={
@@ -321,7 +323,7 @@ function GroupForm(props) {
                   {({ input }) => (
                     <Row className="form-group">
                       <Col xs={3}>
-                        <label className="form-label pull-right">
+                        <label className="form-label float-end">
                           Description
                         </label>
                       </Col>
@@ -376,11 +378,11 @@ function GroupForm(props) {
                               `input[id=${Object.keys(errors)[0]}]`
                             ) ||
                             document.querySelector(
-                              `span[class="invalid-field"]`
+                              `span[className="invalid-field"]`
                             );
                           scrollToError(selector);
                         }
-                        handleSubmit(values, invalid);
+                        handleSubmit(values);
                       }}
                       size="sm"
                       disabled={groupType === 1 ? true : submitting}

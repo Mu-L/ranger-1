@@ -17,6 +17,20 @@
 
 package org.apache.hadoop.crypto.key.kms;
 
+import org.apache.hadoop.crypto.key.RangerKeyStore;
+import org.apache.ranger.kms.dao.DaoManager;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import javax.crypto.KeyGenerator;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -28,141 +42,123 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 
-import javax.crypto.KeyGenerator;
-
-import org.apache.hadoop.crypto.key.RangerKeyStore;
-import org.apache.ranger.kms.dao.DaoManager;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.MethodSorters;
-import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
-
-@RunWith(MockitoJUnitRunner.class)
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@ExtendWith(MockitoExtension.class)
+@TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestRangerKeyStore {
+    String fileFormat       = "jceks";
+    String keyStoreFileName = "KmsKeyStoreFile";
+    char[] storePass        = "none".toCharArray();
+    char[] keyPass          = "none".toCharArray();
+    char[] masterKey        = "MasterPassword".toCharArray();
 
-        String fileFormat = "jceks";
-        String keyStoreFileName = "KmsKeyStoreFile";
-        char[] storePass = "none".toCharArray();
-        char[] keyPass = "none".toCharArray();
-        char[] masterKey = "MasterPassword".toCharArray();
+    @BeforeEach
+    public void checkFileIfExists() {
+        deleteKeyStoreFile();
+    }
 
-        @Before
-        public void checkFileIfExists() {
-                deleteKeyStoreFile();
+    @AfterEach
+    public void cleanKeystoreFile() {
+        deleteKeyStoreFile();
+    }
+
+    @Test
+    public void testInvalidKey1() {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "enckey:1";
+        Exception exception = Assertions.assertThrows(IOException.class, () -> {
+            InputStream inputStream = generateKeyStoreFile(keyValue);
+            rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+            inputStream.close();
+        });
+    }
+
+    @Test
+    public void testInvalidKey2() throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "1%enckey";
+        Assertions.assertThrows(IOException.class, () -> {
+            InputStream inputStream = generateKeyStoreFile(keyValue);
+            rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+            inputStream.close();
+        });
+    }
+
+    @Test
+    public void testInvalidKey3() throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "1 enckey";
+        Assertions.assertThrows(IOException.class, () -> {
+            InputStream inputStream = generateKeyStoreFile(keyValue);
+            rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+            inputStream.close();
+        });
+    }
+
+    @Test
+    public void testInvalidKey4() throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "_1-enckey";
+        Assertions.assertThrows(IOException.class, () -> {
+            InputStream inputStream = generateKeyStoreFile(keyValue);
+            rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+            inputStream.close();
+        });
+    }
+
+    @Test
+    public void testValidKey1() throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "enckey_1-test";
+        InputStream    inputStream    = generateKeyStoreFile(keyValue);
+        rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+        inputStream.close();
+    }
+
+    @Test
+    public void testValidKey2() throws NoSuchAlgorithmException, CertificateException, IOException, KeyStoreException {
+        DaoManager     daoManager     = Mockito.mock(DaoManager.class);
+        RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
+        String         keyValue       = "1-enckey_test";
+        InputStream    inputStream    = generateKeyStoreFile(keyValue);
+        rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
+        inputStream.close();
+    }
+
+    private InputStream generateKeyStoreFile(String keyValue) throws KeyStoreException, NoSuchAlgorithmException, CertificateException, IOException {
+        FileOutputStream stream = new FileOutputStream(new File(keyStoreFileName));
+        KeyStore         ks;
+        try {
+            ks = KeyStore.getInstance(fileFormat);
+            if (ks != null) {
+                ks.load(null, storePass);
+                String alias = keyValue;
+
+                KeyGenerator kg = KeyGenerator.getInstance("AES");
+                kg.init(256);
+                Key key = kg.generateKey();
+                ks.setKeyEntry(alias, key, keyPass, null);
+                ks.store(stream, storePass);
+            }
+            return new FileInputStream(new File(keyStoreFileName));
+        } catch (Throwable t) {
+            throw new IOException(t);
+        } finally {
+            stream.close();
         }
+    }
 
-        @After
-        public void cleanKeystoreFile() {
-                deleteKeyStoreFile();
+    private void deleteKeyStoreFile() {
+        File f = new File(keyStoreFileName);
+        if (f.exists()) {
+            boolean bol = f.delete();
+            if (!bol) {
+                System.out.println("Keystore File was not deleted successfully.");
+            }
         }
-
-        @Test(expected=IOException.class)
-        public void testInvalidKey1() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "enckey:1";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        @Test(expected=IOException.class)
-        public void testInvalidKey2() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "1%enckey";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        @Test(expected=IOException.class)
-        public void testInvalidKey3() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "1 enckey";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        @Test(expected=IOException.class)
-        public void testInvalidKey4() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "_1-enckey";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        @Test
-        public void testValidKey1() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "enckey_1-test";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        @Test
-        public void testValidKey2() throws NoSuchAlgorithmException,
-                        CertificateException, IOException, KeyStoreException {
-
-                DaoManager daoManager = Mockito.mock(DaoManager.class);
-                RangerKeyStore rangerKeyStore = new RangerKeyStore(daoManager);
-                String keyValue = "1-enckey_test";
-                InputStream inputStream = generateKeyStoreFile(keyValue);
-                rangerKeyStore.engineLoadKeyStoreFile(inputStream, storePass, keyPass, masterKey, fileFormat);
-                inputStream.close();
-        }
-
-        private InputStream generateKeyStoreFile(String keyValue) throws KeyStoreException, NoSuchAlgorithmException, CertificateException, IOException {
-                FileOutputStream stream = new FileOutputStream(new File(keyStoreFileName));
-                KeyStore ks;
-                try {
-                        ks = KeyStore.getInstance(fileFormat);
-                        if (ks != null) {
-                                ks.load(null, storePass);
-                                String alias = keyValue;
-
-                                KeyGenerator kg = KeyGenerator.getInstance("AES");
-                                kg.init(256);
-                                Key key = kg.generateKey();
-                                ks.setKeyEntry(alias, key, keyPass, null);
-                                ks.store(stream, storePass);
-                        }
-                        return new FileInputStream(new File(keyStoreFileName));
-                } catch (Throwable t) {
-                        throw new IOException(t);
-                } finally {
-			stream.close();
-                }
-        }
-
-        private void deleteKeyStoreFile() {
-                File f = new File(keyStoreFileName);
-                if (f.exists()) {
-                        boolean bol = f.delete();
-                        if(!bol){
-				System.out.println("Keystore File was not deleted successfully.");
-                        }
-                }
-        }
+    }
 }

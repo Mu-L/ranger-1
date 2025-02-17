@@ -42,6 +42,24 @@ get_prop(){
                 fi
 }
 
+get_prop_or_default() {
+  validateProperty=$(sed '/^\#/d' $2 | grep "^$1\s*="  | tail -n 1) # for validation
+
+  if test -z "$validateProperty" ;
+  then
+    value=$3 # default value
+  else
+    value=$(echo $validateProperty | cut -d "=" -f2-)
+  fi
+
+  if [[ $1 == *password* ]]
+  then
+    echo $value
+  else
+   echo $value | tr -d \'\"
+ fi
+}
+
 PROPFILE=${RANGER_ADMIN_CONF:-$PWD}/install.properties
 if [ ! -f "${PROPFILE}" ]; then
         echo "$PROPFILE file not found....!!"
@@ -51,8 +69,10 @@ fi
 LOGFILE=$(eval echo " $(get_prop 'LOGFILE' $PROPFILE)")
 
 PYTHON_COMMAND_INVOKER=$(get_prop 'PYTHON_COMMAND_INVOKER' $PROPFILE)
+
 DB_FLAVOR=$(get_prop 'DB_FLAVOR' $PROPFILE)
 SQL_CONNECTOR_JAR=$(get_prop 'SQL_CONNECTOR_JAR' $PROPFILE)
+CONNECTION_STRING_ADDITIONAL_PARAMS=$(get_prop 'CONNECTION_STRING_ADDITIONAL_PARAMS' $PROPFILE)
 db_root_user=$(get_prop 'db_root_user' $PROPFILE)
 db_root_password=$(get_prop 'db_root_password' $PROPFILE)
 db_host=$(get_prop 'db_host' $PROPFILE)
@@ -76,6 +96,7 @@ javax_net_ssl_trustStore=$(get_prop 'javax_net_ssl_trustStore' $PROPFILE)
 javax_net_ssl_trustStorePassword=$(get_prop 'javax_net_ssl_trustStorePassword' $PROPFILE)
 audit_store=$(get_prop 'audit_store' $PROPFILE)
 audit_elasticsearch_urls=$(get_prop 'audit_elasticsearch_urls' $PROPFILE)
+audit_elasticsearch_protocol=$(get_prop 'audit_elasticsearch_protocol' $PROPFILE)
 audit_elasticsearch_port=$(get_prop 'audit_elasticsearch_port' $PROPFILE)
 audit_elasticsearch_user=$(get_prop 'audit_elasticsearch_user' $PROPFILE)
 audit_elasticsearch_password=$(get_prop 'audit_elasticsearch_password' $PROPFILE)
@@ -129,6 +150,7 @@ LOGFILES=$(eval echo "$(get_prop 'LOGFILES' $PROPFILE)")
 JAVA_BIN=$(get_prop 'JAVA_BIN' $PROPFILE)
 JAVA_VERSION_REQUIRED=$(get_prop 'JAVA_VERSION_REQUIRED' $PROPFILE)
 JAVA_ORACLE=$(get_prop 'JAVA_ORACLE' $PROPFILE)
+java_opts=$(get_prop_or_default 'java_opts' $PROPFILE '')
 mysql_core_file=$(get_prop 'mysql_core_file' $PROPFILE)
 mysql_audit_file=$(get_prop 'mysql_audit_file' $PROPFILE)
 oracle_core_file=$(get_prop 'oracle_core_file' $PROPFILE)
@@ -199,9 +221,11 @@ get_distro(){
 	log "[I] Checking distribution name.."
 	ver=$(cat /etc/*{issues,release,version} 2> /dev/null)
 	if [[ $(echo $ver | grep DISTRIB_ID) ]]; then
-                DIST_NAME=$(lsb_release -si)
+	  DIST_NAME=$(lsb_release -si)
+	elif [[ $(echo $ver | grep -E '^NAME=' | cut -d'"' -f2) ]]; then
+	  DIST_NAME=$(echo $ver | grep -E '^NAME=' | cut -d'"' -f2)
 	else
-                DIST_NAME=$(echo $ver | cut -d ' ' -f 1 | sort -u | head -1)
+	  DIST_NAME=$(echo $ver | cut -d ' ' -f 1 | sort -u | head -1)
 	fi
 	export $DIST_NAME
 	log "[I] Found distribution : $DIST_NAME"
@@ -381,6 +405,8 @@ check_java_version() {
 		log "[E] The java version must be greater than or equal to $JAVA_VERSION_REQUIRED, the current java version is $version"
 		exit 1;
 	fi
+
+	if [[ ${JAVA_OPTS} == "" ]] ;then  export JAVA_OPTS="${java_opts}" ;fi
 }
 
 sanity_check_files() {
@@ -722,7 +748,12 @@ update_properties() {
 	if [ "${DB_FLAVOR}" == "MSSQL" ]
 	then
 		propertyName=ranger.jpa.jdbc.url
-		newPropertyValue="jdbc:sqlserver://${DB_HOST};databaseName=${db_name}"
+		if [ "${CONNECTION_STRING_ADDITIONAL_PARAMS}" != "" ]
+		then
+  			newPropertyValue="jdbc:sqlserver://${DB_HOST};databaseName=${db_name};${CONNECTION_STRING_ADDITIONAL_PARAMS}"
+     		else
+       			newPropertyValue="jdbc:sqlserver://${DB_HOST};databaseName=${db_name}"
+	  	fi
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file_ranger
 
 		propertyName=ranger.jpa.jdbc.dialect
@@ -788,6 +819,10 @@ update_properties() {
 	then
 		propertyName=ranger.audit.elasticsearch.urls
 		newPropertyValue=${audit_elasticsearch_urls}
+		updatePropertyToFilePy $propertyName $newPropertyValue $to_file_ranger
+
+		propertyName=ranger.audit.elasticsearch.protocol
+		newPropertyValue=${audit_elasticsearch_protocol}
 		updatePropertyToFilePy $propertyName $newPropertyValue $to_file_ranger
 
 		propertyName=ranger.audit.elasticsearch.port
@@ -1705,4 +1740,12 @@ then
 else
 	exit 1
 fi
+
+if [ "${DEBUG_ADMIN}" == "true" ]
+then
+  # shellcheck disable=SC2164
+  cd "${RANGER_HOME}"/admin/conf
+  xmlstarlet ed -L -u "//root/@level" -v "debug" logback.xml
+fi
+
 echo "Installation of Ranger PolicyManager Web Application is completed."
